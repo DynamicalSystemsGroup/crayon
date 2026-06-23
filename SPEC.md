@@ -20,8 +20,10 @@ Crayon resolves this by assigning unambiguous roles drawn straight from git's ow
   of one branch, never the source of truth.
 - **Crayon (Chrome extension) = the working-copy tooling** — the `git` you run against your checkout:
   pull, push, branch, open PR, navigate.
-- **`crayon` (Python CLI) = the governance layer** — run by a developer in a real IDE to scaffold a
-  repo and author/enforce CI/CD policy (GitHub Actions, branch protection). Not needed for daily use.
+- **`crayon` (Python CLI) = minimalist governance tooling** — run by a developer in a real IDE to
+  scaffold a repo and author CI/CD rules (GitHub Actions running `crayon check`) and content routes
+  (`crayon publish`). **Branch protection itself is configured in GitHub's web UI** — Crayon does not
+  duplicate GitHub governance. Not needed for daily use.
 
 The design is **opinionated and serverless**: it supports *one* blessed workflow well rather than all
 possible workflows. There is no backend service to host — the extension talks directly to the GitHub
@@ -350,11 +352,13 @@ meet: the author writes freely in the Doc, and the canonical record enforces a w
 - **Service worker:** owns both OAuth flows (GitHub Device Flow; Google `launchWebAuthFlow`+PKCE),
   token storage in `chrome.storage.session` (+ minimal metadata in `local`), and all API calls to
   `api.github.com`, Docs API, Drive API. Exposes a message API to the UI.
-- **Popup UI:** the "git client" — shows current repo/branch, the branch list with Doc links,
-  buttons: **Pull**, **Push**, **Open PR**, **New branch**, **Delete branch**, **Open on GitHub**.
+- **Popup UI:** the "git client" — shows current repo/branch, the branch list with Doc links, the
+  branch's **CI status as green ✓ (passed) / red ✗ (failed) / ◦ pending** (from the GitHub Checks
+  API), and buttons: **Pull**, **Push**, **Open PR**, **New branch**, **Delete branch**, **Open on
+  GitHub**.
 - **Content scripts (thin):**
   - on `docs.google.com`: detect the active Doc, surface a small status chip (branch, in-sync /
-    diverged), and a Pull/Push affordance.
+    diverged, and the branch's **green/red CI state**), and a Pull/Push affordance.
   - on `github.com`: "Open in Google Docs" affordances on a repo/branch/PR; navigation glue.
 - **Markdown ⇄ Docs conversion** runs client-side (e.g. a `google-docs-to-markdown`-style exporter;
   Markdown→Docs request builder). Lossy by design; fidelity backstop is the JSON snapshot. The
@@ -366,16 +370,27 @@ meet: the author writes freely in the Doc, and the canonical record enforces a w
 > the `crayon` Python CLI below — no editor plugin. The three *user* surfaces (Docs web, GitHub web,
 > local IDE) are spelled out in "The three user interfaces" section.
 
-### 2. `crayon` Python CLI (the governance layer; for IDE users)
-- `crayon init` — scaffold a repo from a simple template: a starter `intro.md`, `.crayon/` layout, a
-  default GitHub Actions workflow that runs the **outline-integrity + well-formedness check** (the
-  shipped default policy; see "Heading hierarchy & outline"), and sensible branch protection on
-  `main` (require PR + that check). Uses PyGithub / GitHub REST (+ GraphQL only if a rule needs it).
-- `crayon check` — run the policy checks locally / in CI: outline well-formedness (one top level, no
-  skipped levels, max depth) and manifest/marker consistency. Exit non-zero on violation. This is the
-  status check branch protection requires.
-- `crayon policy apply` — (re)apply branch-protection / required-checks defined in a small config
-  file in the repo (incl. the outline-rule strictness), so policy is itself code-reviewed.
+### 2. `crayon` Python CLI (minimalist dev tooling; for IDE / policy authors)
+This is **thin** — just enough machinery that a policy author builds what they want by copying the
+example patterns. Two symmetric primitives drive it: **rules** ("check this") and **sinks** ("write
+this there").
+- `crayon init` — scaffold a repo from a simple template: a starter `intro.md`, the `.crayon/` layout
+  (incl. a starter `rules.yaml` and copy-me examples under `.crayon/checks/`), and a default GitHub
+  Actions workflow that runs `crayon check`. It does **not** set branch protection — that is a human
+  act in GitHub's web UI (require PR + the `crayon-check` status). Uses PyGithub / GitHub REST.
+- `crayon check` — run the repo's **rules** locally / in CI; exit non-zero on any failure (the status
+  check branch protection requires). A rule is a thin Python object — a `Rule` ABC → concrete *kinds*
+  → parametrized instances — that acts on a fixed **domain** (`repo` / `file` / `files` / `section` /
+  `sections`), always returns a `bool`, and carries a descriptive failure message. Instances are
+  materialized low-code from `.crayon/rules.yaml`, or added as custom subclasses dropped in
+  `.crayon/checks/`. Starter kinds: `outline_well_formed`, `word_count`, `section_drift`.
+  Network-free and deterministic.
+- `crayon publish` — the **mirror of `check`**: route content from a file or file/section to an
+  external endpoint. A `Sink` ABC → concrete kinds → instances, materialized from `.crayon/publish.yaml`
+  or added as custom subclasses in `.crayon/sinks/`. Used post-merge in CI for read-only publication or
+  pushing merged content onto other APIs. Ships **dependency-free example sinks only** (a local-file
+  sink; an `http_post` sink via stdlib `urllib`); real targets (e.g. Substack) are user-authored
+  subclasses — Crayon takes no third-party dependency.
 - `crayon doctor` — verify a repo is Crayon-shaped (folder/manifest/snapshot conventions, workflow
   present). Read-only.
 - Explicitly **out of the daily loop**: advanced setups are expected to be done here, by a developer,
@@ -390,9 +405,13 @@ no human ever edits the seam by hand.
 
 | # | Surface | Who | Reads/writes via | Can do | Cannot do |
 |---|---|---|---|---|---|
+| **UI-0** | **Install & onboard (web + local)** | First-time users of any surface | Doc site → Web Store / dev-install → in-browser OAuth; or `uv`/`pipx` + `crayon init` | Discover, install, authenticate (**no separate login or API key** on web), bind first repo, first Pull | Anything before install — the plugin cannot be used unless installed |
 | **UI-1** | **Google Docs & Drive (web)** | Authors who want WYSIWYG + multiplayer | Docs editor + Crayon popup | Pull, edit prose/figures/tables, Push to a branch, open PR, navigate to GitHub | Merge to main; author CI policy |
 | **UI-2** | **GitHub repo (web)** | Reviewers / maintainers (governance) | GitHub web UI | Review PR diffs (clean Markdown), run/inspect CI, **merge** (enact governance), manage branch protection | Edit Docs content ergonomically |
 | **UI-3** | **Local IDE (local)** | Developers | `git` + `crayon` CLI (no plugin) | Edit Markdown directly, run `crayon check`, commit/PR, **author** CI policy as code | Use Docs' WYSIWYG affordances |
+
+**UI-0 is the one-time entry into the other three surfaces:** *one cannot use the plugin without
+installing it.* It terminates in a first successful Pull (web) or `crayon check` (IDE).
 
 **Canon = the GitHub remote `main` branch.** Everything else (a Doc, a feature branch, a local
 checkout) is a *working copy* of canon.
@@ -428,6 +447,8 @@ error}`):
 - `sync.pull({branch})` → `{written:[paths], pulledSha}`
 - `sync.push({branch, openPR?:bool})` → `{commitSha, prUrl?}`
 - `status.get({branch})` → `{state: "in-sync"|"local-ahead"|"remote-ahead"|"diverged", ...}`
+- `checks.get({branch})` → `{state: "success"|"failure"|"pending"|"none", checks:[{name, conclusion}]}`
+  — the branch PR's GitHub CI state, rendered as the green/red indicator in the popup and chip.
 
 **Error taxonomy (stable, tested):** `AUTH_REQUIRED`, `NOT_BOUND`, `DIVERGED_CONFLICT`,
 `RATE_LIMITED`, `DRIVE_ERROR`, `GITHUB_ERROR`, `TAB_STRUCTURE_REQUIRED`, `TIER3_PRESENT` (warn).
@@ -461,27 +482,73 @@ read/write by `tabId`; **no tab create/delete** (constraint #3).
 - **`.crayon/manifest.json`**: `{schemaVersion, branch, tree:[{path, kind:"file"|"doc"|"folder",
   docId?}]}`.
 - **`.crayon/snapshots/<docId>.json`**: raw Docs `documents.get` JSON (replaced each commit).
+- **`.crayon/rules.yaml`**: `{schemaVersion, rules:[{kind, …params}]}` — materializes `Rule` instances
+  (validated by `rules.schema.json`).
+- **`.crayon/publish.yaml`**: `{schemaVersion, routes:[{kind, …params}]}` — materializes `Sink`
+  instances (validated by `publish.schema.json`).
 - **`assets/<sha256>.<ext>`**: content-hash-named figure binaries.
 
-### S6 — CLI ⇄ repo working tree (`crayon check`)
-Input: a checked-out tree. Output: **exit code** (0 pass / non-zero fail) + a report. Rules:
-outline well-formedness (one top level, no skipped levels, max depth), manifest/marker consistency,
-frontmatter validity, Canonical-Markdown conformance. **Contract:** pure, deterministic, network-free
-— this is the gate CI and branch protection depend on.
+### S6 — CLI ⇄ repo working tree (`crayon check`, the rule engine)
+Input: a checked-out tree. Output: **exit code** (0 pass / non-zero fail) + a report. The engine is a
+thin, symmetric "check this" half:
+- A `Rule` is an **abstract base class**; concrete **kinds** subclass it; a parametrized **instance**
+  (all params set) is an executable rule. Each rule declares a **domain** it acts on — `repo` / `file`
+  / `files` / `section` / `sections` — always returns a `bool`, and exposes a descriptive failure
+  message.
+- Instances are materialized **low-code** from `.crayon/rules.yaml`, or written as **custom
+  subclasses** dropped in `.crayon/checks/*.py` (auto-registered by `kind`; no plugin framework). The
+  two paths compose — YAML may reference custom kinds.
+- Built-in starter kinds (just enough to show the pattern): `outline_well_formed` *(repo)*,
+  `word_count` *(file/section)*, `section_drift` *(sections — two+ sections must be identical text)*.
+  The engine also enforces manifest/marker consistency, frontmatter validity, and Canonical-Markdown
+  conformance.
 
-### S7 — CLI ⇄ GitHub API (`crayon init` / `policy apply`)
-Creates repo skeleton, writes the default Action, sets branch protection (require PR + the `check`
-status). Idempotent: re-running converges to the declared policy config in-repo.
+**Contract:** pure, deterministic, network-free — the gate CI and (human-configured) branch protection
+depend on.
+
+### S7 — CLI ⇄ GitHub API (`crayon init`)
+Creates the repo skeleton and writes the default Action (which runs `crayon check`). **Crayon does
+*not* set branch protection** — requiring the `crayon-check` status and protecting `main` is a human
+act in GitHub's web UI (S8 / UI-2), so there is no duplicated governance surface and the CLI needs no
+policy-write scope.
 
 ### S8 — GitHub Action ⇄ CLI
 The default workflow runs `crayon check` on PRs; its exit code is the required status check. **This is
-the only place governance is *enforced*; merge is where it is *enacted* (UI-2).**
+the only place governance is *enforced*; merge is where it is *enacted* (UI-2).** Which checks are
+*required* and which branches are *protected* is configured by a human in GitHub settings — Crayon
+supplies the check, GitHub supplies the gate.
+
+### S9 — CLI ⇄ external endpoints (`crayon publish`, the sink engine)
+The symmetric "write this there" half of S6, run post-merge in CI. A `Sink` is an **abstract base
+class**; concrete **kinds** subclass it; a parametrized **instance** routes content from a **source**
+(`file` / `section`, the same domain vocabulary as rules) to an external endpoint. Instances are
+materialized from `.crayon/publish.yaml` or written as custom subclasses in `.crayon/sinks/*.py`.
+**Contract:** ships **dependency-free** example sinks only (`file` → a local path; `http_post` → an
+endpoint via stdlib `urllib`); real destinations are user-authored subclasses, so Crayon takes no
+third-party dependency. Supports read-only publication and pushing merged content onto other APIs.
 
 ---
 
 ## Workflows — sequence diagrams (increasing complexity)
 
 Only these workflows are supported. They build from solo to the full cross-surface conflict case.
+
+### W0 — Install & onboard (the one-time entry, UI-0)
+```mermaid
+sequenceDiagram
+  actor U as First-time user (UI-0)
+  participant S as Doc site (GitHub Pages)
+  participant X as Crayon (ext / CLI)
+  participant P as OAuth providers (GitHub + Google)
+  participant G as GitHub (remote)
+  U->>S: discover Crayon, follow getting-started
+  U->>X: install (Web Store / dev-install — web) OR uv/pipx + crayon init (IDE)
+  U->>P: authenticate (in-browser dual-OAuth — no API key; or gitignored .env on IDE)
+  U->>X: bind first repo
+  U->>X: first Pull (web) / crayon check (IDE)
+  X->>G: read main HEAD
+  Note over U,G: terminates in an in-sync working copy — ready for W1
+```
 
 ### W1 — Solo Docs author (the happy path)
 ```mermaid
@@ -566,6 +633,34 @@ sequenceDiagram
   A->>X: Push (feature) → now clean → commit + PR
 ```
 
+### W6 — Policy author authors a rule (UI-3, low-code → custom)
+```mermaid
+sequenceDiagram
+  actor P as Policy author (UI-3)
+  participant R as .crayon/rules.yaml + checks/
+  participant C as crayon check (local)
+  participant G as GitHub (Action + protection)
+  P->>R: enable a starter kind in rules.yaml  %% low-code
+  P->>R: (or) copy a starter class → .crayon/checks/my_rule.py  %% custom
+  P->>C: crayon check  (network-free, deterministic)
+  C-->>P: pass / fail + descriptive message
+  P->>G: commit + PR; the Action runs crayon check
+  Note over P,G: human-configured branch protection blocks merge on red ✗
+```
+
+### W7 — Post-merge publication / routing (UI-2 merge → external endpoint)
+```mermaid
+sequenceDiagram
+  participant G as GitHub (protected main)
+  participant A as Action (on merge)
+  participant S as crayon publish (sinks)
+  participant E as External endpoint
+  G->>A: merge to main (after the strict check battery passes)
+  A->>S: crayon publish  %% reads .crayon/publish.yaml
+  S->>E: route file / section content (read-only publish, or POST to an API)
+  Note over A,E: example sinks are dependency-free; real targets (e.g. Substack) are user subclasses
+```
+
 ### Explicitly out of scope / unsupported (kept opinionated to keep complexity low)
 - **Live, real-time sync across the seam.** No CRDT/OT bridge between Docs multiplayer and git. You
   converge at `main` via Pull/Push, not continuously.
@@ -596,6 +691,20 @@ mocks so integration tests exercise real control flow without network.
 - **INV-7 Cross-impl Canonical-Markdown equivalence:** the JS converter's output and the Python
   CLI's reader agree on the golden fixtures (kills the Risk-#9 drift).
 
+### Security acceptance criteria (SEC) — "nothing malicious reaches the user's browser"
+- **SEC-1 Least privilege:** minimal MV3 `permissions`/`host_permissions` (only `docs.google.com`,
+  `github.com`, the API origins) and the `drive.file` scope; no broad host access.
+- **SEC-2 No remote code:** no `eval`, no remotely-hosted code; all logic ships in the reviewed bundle
+  (MV3-compliant).
+- **SEC-3 Token containment:** OAuth tokens live only in `chrome.storage.session`; never logged or
+  sent anywhere but the provider APIs; no secrets in the bundle or repo (CLI `.env` gitignored).
+- **SEC-4 Injection safety:** content scripts on `docs.google.com`/`github.com` have no XSS sinks or
+  untrusted-HTML injection; the message API validates origins.
+- **SEC-5 Supply-chain integrity:** pinned lockfiles, audited dependencies, no surprise install hooks,
+  release provenance.
+- **SEC-6 Reviewed before listing:** the SEC sweep is a required CI check, and an external/store
+  security review precedes public listing.
+
 ### Test pyramid
 1. **Unit (most, pure, fast):** Docs-JSON↔Markdown converters; Canonical-MD normalizer; GFM
    table parse/emit + escaping; outline extractor + well-formedness rules; manifest/marker (de)ser;
@@ -605,8 +714,9 @@ mocks so integration tests exercise real control flow without network.
 3. **Integration (with API fakes):**
    - Extension flows against `FakeGitHub` + `FakeDrive`: pull, push, branch create/delete, conflict
      refusal, tabbed-Doc read/write — asserts INV-1..6 end to end without network.
-   - CLI against an ephemeral repo / recorded fixtures: `init`, `check` (pass + each failure mode),
-     `policy apply` idempotence.
+   - CLI against an ephemeral repo / recorded fixtures: `init`; `check` (each starter rule kind pass +
+     fail, plus a custom rule discovered from `.crayon/checks/`); `publish` (an example sink routes a
+     file/section deterministically).
 4. **E2E (few, real, mostly manual + a thin Playwright smoke):** unpacked extension in Chrome against
    a throwaway GitHub repo + test Google account — the W1 and W5 sequences.
 
@@ -635,6 +745,9 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
   author sees a "diverged — Pull first" prompt and **nothing is committed** (INV-4).
 - **A4 Tier-3 warning:** *Given* a Doc with a Drawing/merged-cell table, *then* the chip warns it
   won't be versioned as editable; Push still succeeds for the Tier-1 content.
+- **A5 CI status visible:** *Given* a branch with an open PR, *then* the popup and the Docs chip show
+  the branch's CI as **green ✓ when checks pass and red ✗ when they fail** (◦ while pending), matching
+  the GitHub Checks state.
 
 ### UAT-B — GitHub repo (UI-2, governance/canon)
 - **B1 Reviewable diff:** *Given* a Crayon PR, *then* the diff is human-readable Markdown (not blobs).
@@ -646,9 +759,16 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
 ### UAT-C — Local IDE (UI-3)
 - **C1 Author offline:** *Given* a clone, *when* a dev edits Markdown and runs `crayon check`, *then*
   it passes/fails deterministically with no network.
-- **C2 Author policy:** *Given* a policy-config change, *when* `crayon policy apply` runs, *then*
-  branch protection / required checks match the in-repo declaration (idempotent).
-- **C3 Interop:** *Given* the dev's merged change on `main`, *then* a UI-1 author Pulling `main` sees
+- **C2 Author a rule:** *Given* a starter rule, *when* the policy author enables a `kind` in
+  `.crayon/rules.yaml` (low-code) **or** copies a starter class into `.crayon/checks/` (custom),
+  *then* `crayon check` enforces it deterministically and network-free, failing with a descriptive
+  message; the same check runs in CI so branch protection (configured by a human in GitHub) gates the
+  merge.
+- **C3 Route content out:** *Given* a configured sink, *when* `crayon publish` runs (e.g. post-merge),
+  *then* the named file/section content is routed to its endpoint via a dependency-free example sink,
+  deterministically; a custom destination is added by subclassing `Sink` in `.crayon/sinks/` — the
+  same pattern as authoring a rule.
+- **C4 Interop:** *Given* the dev's merged change on `main`, *then* a UI-1 author Pulling `main` sees
   it rendered correctly in Docs.
 
 ### UAT-D — Cross-UI collaboration (the headline guarantee)
@@ -659,6 +779,16 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
   branches, *then* the second merge surfaces a PR conflict resolved on GitHub web (UI-2) — Crayon
   never auto-merges prose, and the loser's Push was refused, not clobbered (INV-4).
 
+### UAT-E — Install & onboarding (UI-0)
+- **E1 Discover→install→first Pull (web):** *Given* a first-time user with nothing installed, *when*
+  they follow only the doc site (install, authenticate both providers in-browser, bind a repo), *then*
+  they reach an "in-sync" Pull of `main` with **no separate login or API key**.
+- **E2 Discover→install→check (IDE):** *Given* a first-time developer, *when* they follow the doc site
+  to `uv`/`pipx` install + `crayon init`/clone, *then* `crayon check` runs deterministically using
+  only a gitignored `.env`.
+- **E3 Safe by construction:** *Given* the published extension, *then* the SEC-1…6 sweep is green and
+  nothing executes outside the reviewed bundle.
+
 ---
 
 ## Scope boundaries (kept deliberately small)
@@ -667,7 +797,11 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
 files as Docs (untabbed = file, tabbed = directory, folder = directory, disambiguated by
 `.crayon-tabs.json`); explicit Pull/Push as tree reconciliation; one atomic commit + optional PR;
 branch create/switch/delete with recursive folder mirroring; Markdown canonical + per-Doc per-commit
-JSON snapshot; conflict = refuse-and-pull; Python CLI for scaffold + branch protection + doctor.
+JSON snapshot; conflict = refuse-and-pull; a thin Python CLI for scaffold + a rule engine (`check`) +
+a symmetric sink engine (`publish`) + doctor — with starter rules/sinks and copy-the-pattern custom
+extension, no third-party deps; **branch protection configured by humans in GitHub's web UI (not
+duplicated by Crayon)**; the plugin surfaces green/red CI status; autogenerated GitHub Pages doc site +
+dev-install onboarding path (Web Store listing gated by the SEC sweep + external review).
 
 (Unsupported *workflows* are listed under "Workflows — … out of scope"; this section lists deferred
 *features/integrations*.)
@@ -752,14 +886,18 @@ This spec is the deliverable. When approved, a reasonable order is:
    lint/warn chip for Drawings, wrapped images, merged/nested tables).
 7. **Branch lifecycle** (create/switch/delete with recursive folder copy/trash mirroring).
 8. **Tabbed Docs** (opt-in; `.crayon-tabs.json` marker; read/write existing tabs).
-9. **PR + navigation glue**, then CLI `init` / `check` (outline-integrity + well-formedness) /
-   `policy apply` / `doctor`, plus the default GitHub Action wiring `check` to branch protection.
+9. **PR + navigation glue** + the plugin's green/red CI status, then CLI `init` / `check` (the rule
+   engine: starter kinds + `.crayon/checks/` custom discovery) / `publish` (the symmetric sink engine)
+   / `doctor`, plus the default GitHub Action running `check`. Branch protection is set by a human in
+   GitHub's web UI to require that check.
 
 ### Verification plan
 Full detail lives in **"Test strategy (TDD)"** and **"User acceptance tests"** above; in brief each
 build step lands with its tests written first:
-- **CLI:** `crayon init` against a throwaway repo → assert repo shape + branch protection via GitHub
-  API; `crayon doctor`/`crayon check` pass/fail the right fixtures. (`uv run pytest`.)
+- **CLI:** `crayon init` against a throwaway repo → assert repo shape + the default Action is written
+  (branch protection is then set by hand in GitHub settings); `crayon doctor`/`crayon check` pass/fail
+  the right fixtures across the starter rule kinds + a custom rule; `crayon publish` routes via an
+  example sink. (`uv run pytest`.)
 - **Extension:** load unpacked in Chrome; manual end-to-end — login both providers; Pull `main` into
   the branch folder; edit a Doc; Push to a branch; confirm the atomic commit (markdown + replaced
   snapshot) on GitHub; create a branch and confirm a new Drive folder appears; delete it and confirm

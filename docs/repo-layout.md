@@ -25,9 +25,20 @@ profile both the JS converter (producer) and the Python CLI (consumer/checker) o
     <sha256>.png                  # content-hash-named figure binaries (Tier 1)
   .crayon/
     manifest.json                 # whole-tree index → schemas/manifest.schema.json
+    rules.yaml                    # crayon check rule set → schemas/rules.schema.json
+    publish.yaml                  # crayon publish routes → schemas/publish.schema.json (optional)
+    checks/                       # custom Rule subclasses (copy-the-pattern); auto-discovered
+      *.py
+    sinks/                        # custom Sink subclasses (copy-the-pattern); auto-discovered
+      *.py
     snapshots/
       <docId>.json                # raw Docs documents.get JSON, REPLACED each commit
 ```
+
+`.crayon/rules.yaml` and `.crayon/publish.yaml` are YAML for low-code authoring but validate against
+the JSON Schemas above (YAML is parsed to JSON first). Custom rules/sinks live as plain Python files
+under `.crayon/checks/` and `.crayon/sinks/`; the CLI imports them so each subclass auto-registers its
+`kind`. **Branch protection is not on disk** — it is configured by a human in GitHub's web UI.
 
 **Directory disambiguation rule (the one-bit test):**
 
@@ -96,6 +107,14 @@ crayon:
 
 ### Code
 - Fenced code blocks with triple backticks; language tag preserved when present.
+
+### Sections (for `section_drift` and file/section sources)
+- A **section** is the heading-bounded region from a heading down to (but excluding) the next heading
+  of equal-or-higher level — its nested subsections included.
+- A section's **text**, for drift comparison and for `crayon publish` file/section sources, is the
+  Canonical Markdown body of that region (the heading line excluded), normalized by this profile. Two
+  sections are "the same" iff their canonical bodies are byte-identical — so drift checks are
+  deterministic for the same reason round-trips are (INV-1).
 
 ---
 

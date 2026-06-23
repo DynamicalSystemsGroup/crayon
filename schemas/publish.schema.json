@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/publish.schema.json",
+  "title": "Crayon publication routes (.crayon/publish.yaml)",
+  "description": "Low-code materialization of `Sink` instances run by `crayon publish` — the symmetric 'write this there' mirror of the rule engine. Each route selects a concrete sink `kind` (a dependency-free starter kind, or a custom subclass in `.crayon/sinks/`), names the source content (a file or file/section), and supplies endpoint parameters validated by the sink class. Lives in the repo so routes are versioned and reviewable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "routes"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "routes": {
+      "type": "array",
+      "description": "Ordered list of executable publication routes.",
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "description": "One executable route: a concrete sink `kind`, a `source`, plus endpoint parameters. Additional kind-specific keys are permitted and validated by the sink class.",
+      "required": ["kind", "source"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registry key of the concrete `Sink` subclass (e.g. `file`, `http_post`, or a custom kind from `.crayon/sinks/`)."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The content routed out: a whole file, or a heading-bounded section of a file.",
+          "required": ["file"],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Repo-relative POSIX path of the `.md` file."
+            },
+            "heading": {
+              "type": "string",
+              "minLength": 1,
+              "description": "When present, routes only the section under this heading (a file/section source); otherwise the whole file."
+            }
+          }
+        }
+      }
+    }
+  }
+}
