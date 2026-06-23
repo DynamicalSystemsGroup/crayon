@@ -33,7 +33,7 @@ Authentication is a *per-surface contract*, not just an extension concern. These
 criteria attached to the relevant packages:
 
 - **Web user (Chrome extension, UI-1):** **never** sees a separate login or an API key. Identity is
-  the serverless dual-OAuth only — GitHub Device Flow + Google PKCE, tokens in
+  the serverless dual-OAuth only — GitHub App device flow + Google PKCE, tokens in
   `chrome.storage.session`. Any design that would require the web user to paste a token fails the gate
   for WBS 3.2 / 3.3.
 - **IDE user (`crayon` CLI, UI-3):** may supply credentials via a **gitignored `.env`** (GitHub token
@@ -214,12 +214,15 @@ The auth spike de-risks the serverless dual-OAuth assumption; the converter is t
   1.5.
 
 ### 3.2 Dual-OAuth auth spike
-- **Deliverable:** GitHub Device Flow + Google PKCE in the service worker; token storage in
-  `chrome.storage.session`; proven serverless (public client_id, `drive.file` scope).
-- **Satisfies:** S1 (`auth.status`/`auth.login`), hard constraints #1–2; **the web-user credential
-  rule — zero separate logins, zero API keys; identity is in-browser OAuth only.**
+- **Deliverable:** **GitHub App device flow** (user-to-server tokens scoped to installed repos, not a
+  broad `repo` scope) + Google PKCE in the service worker; token storage in `chrome.storage.session`;
+  proven serverless (public client_id, `drive.file` scope). Public-repo path needs no install;
+  private-repo path requires installing the App on the repo (documented, heavier).
+- **Satisfies:** S1 (`auth.status`/`auth.login`), hard constraints #1–2; **SEC-1** (least-privilege
+  GitHub token); **the web-user credential rule** — zero separate logins, zero API keys; identity is
+  in-browser OAuth only.
 - **Acceptance gate:** E2E manual smoke — log in to both providers with no backend and no pasted
-  token. A design requiring the web user to supply a key fails this gate. Unblocks all sync work.
+  token; confirm the token is repo-scoped (cannot touch an unrelated repo). Unblocks all sync work.
   **Depends on:** 3.1.
 
 ### 3.3 S1 message API + error taxonomy
@@ -249,10 +252,10 @@ with **no tree-walking** — the integration milestone where INV-1/3/4 first hol
 
 | WBS | Deliverable | Satisfies | Acceptance gate | Depends on |
 |-----|-------------|-----------|-----------------|------------|
-| 4.1 | Drive binding + branch-folder layout (`Crayon/<owner>/<repo>/<branch>/`, `drive.file` only) | S3 | integration vs FakeDrive | 3.2, 1.3 |
-| 4.2 | Checkpoint read/write — `DeveloperMetadata` per `checkpoint.schema.json` (`lastSyncCommitSha`, `lastSyncContentHash`) | S3, S5 | contract + integration | 4.1, 1.2 |
+| 4.1 | Drive binding + branch-folder layout — **one canonical folder** under `Crayon/<owner>/<repo>/<branch>/` (account or Shared Drive), collaborators as editors; **one-time Picker "adopt" per Doc** for files another user created (`drive.file`) | S3 | integration vs FakeDrive; adopt path covered | 3.2, 1.3 |
+| 4.2 | Checkpoint read/write — `DeveloperMetadata` per `checkpoint.schema.json`; `lastSyncContentHash` taken over the Doc's **re-export** (settling), tabbed-Doc hash = ordered tab concat | S3, S5 | contract + integration | 4.1, 1.2 |
 | 4.3 | Divergence state machine — `status.get` → `in-sync\|local-ahead\|remote-ahead\|diverged` | S1 | unit over the truth table | 4.2 |
-| 4.4 | Pull (N=1) — read HEAD, convert via 3.5, write Doc, stamp checkpoint, write snapshot | S2 (read), S3 | **INV-3** (Pull then Pull = no Drive change); **UAT-A1**. integration vs fakes | 3.5, 4.2, 4.3 |
+| 4.4 | Pull (N=1) — read HEAD, convert via 3.5, write Doc, **settle** (re-export → hash → at most one settling commit), stamp checkpoint, write snapshot | S2 (read), S3 | **INV-1** settling fixed point; **INV-3** (Pull then Pull = no Drive change); **UAT-A1**. integration vs fakes | 3.5, 4.2, 4.3 |
 | 4.5 | Push (N=1, atomic) — export via 3.4, one commit via Git Data API (blobs→tree→commit→update-ref, expected-SHA), replace snapshot, optional PR | S2 | **INV-1** (unedited Pull→Push = empty diff); **UAT-A2**. integration vs fakes | 3.4, 4.4 |
 | 4.6 | Conflict refusal — both sides moved → `DIVERGED_CONFLICT`, **zero writes** | S1, S2 | **INV-4**; **UAT-A3** / **UAT-D2**. integration vs fakes | 4.5 |
 | 4.7 | Minimal popup + status chip — Pull/Push buttons, branch/repo display, docs.google.com chip | S1, content script | E2E manual smoke (SPEC.md step-4 verification) | 4.4, 4.5, 4.6 |
@@ -305,6 +308,13 @@ the headline guarantee.
 - **S.6 External / store security review** — third-party (or Chrome Web Store) review of OAuth-scope
   justification + bundle before public listing. Gate: external sign-off is a prerequisite for O.5.
   Depends on: S.5.
+- **S.7 Rule/sink trust model + screening (constitutive surface)** — the default Action templates
+  invoke only `crayon check` / `crayon publish` (no arbitrary `run:` steps); PR checks use
+  `pull_request` + least-privilege `GITHUB_TOKEN` + no secrets; publish secrets are post-merge only;
+  ship [`docs/screening-guide.md`](screening-guide.md) as the reviewer checklist for `.crayon/checks/`,
+  `.crayon/sinks/`, configs, and workflows. Gate: **SEC-7/8/9** — a fork-PR custom rule runs with no
+  secrets and cannot escape the ABC templates; the screening checklist catches a planted
+  `run:`/network/secret-read. Depends on: 2.2, 2.6, 2.8.
 
 ---
 
@@ -321,8 +331,9 @@ gated by review** (dev-install now, Web Store later).
   onboarding without blocking on store review. Gate: a fresh profile installs and reaches first OAuth
   by following only the guide. Depends on: 3.1, O.1.
 - **O.3 Extension first-run onboarding UX** — post-install flow: prompt dual-OAuth (in-browser, no
-  keys) → bind first repo → first Pull, with the status chip explaining state. Gate: **UAT-E** (web
-  variant) end-to-end; honors the web-user-no-keys rule. Depends on: 3.2, 4.7, O.2.
+  keys) → bind first repo → **one-time Picker "adopt"** when joining an existing shared folder → first
+  Pull, with the status chip explaining state. Gate: **UAT-E** (web variant) end-to-end incl. a
+  second collaborator adopting; honors the web-user-no-keys rule. Depends on: 3.2, 4.1, 4.7, O.2.
 - **O.4 CLI onboarding/quickstart** — `uv`/`pipx` install instructions + `crayon init` quickstart;
   `.env.example` walkthrough for the IDE user. Gate: **UAT-E** (IDE variant) — clone-to-`check` with
   only the gitignored `.env`. Depends on: 2.5, 1.5, O.1.
@@ -351,8 +362,11 @@ gated by review** (dev-install now, Web Store later).
   WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4.
 - **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · UAT-B → 2.2/2.8/9 ·
   **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** · C4 (interop) → WBS 5/9 ·
-  UAT-D → 4.6/9 · **UAT-E → O.3/O.4** · **SEC-1…n → WBS S**. Every invariant, UAT case, and security
-  criterion has an owning package.
+  UAT-D → 4.6/9 · **UAT-E → O.3/O.4** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 (rule/sink trust) →
+  S.7**. Every invariant, UAT case, and security criterion has an owning package.
+- **Governance modes:** the WBS mirrors the spec's operative/constitutive split — the fast operative
+  path is WBS 3–4 (+5–8); the slow, screened constitutive surface (rules, sinks, workflows) is WBS 2.2
+  / 2.6 / 2.8 with its trust model in S.7. Repo-supplied code executes only in the constitutive layer.
 - **Symmetry note:** the rule engine (2.2, "check this") and the sink engine (2.6, "write this there")
   share one ABC→kinds→YAML-materialization→custom-subclass pattern, so 2.6 reuses 2.2's machinery and
   the worked examples (O.6/O.7) teach a single pattern twice.

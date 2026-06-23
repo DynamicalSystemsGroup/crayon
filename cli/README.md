@@ -20,6 +20,12 @@ symmetric primitives: **rules** ("check this") and **sinks** ("write this there"
   stdlib `urllib`); real targets are user subclasses (S9).
 - `crayon doctor` — read-only check that a repo is Crayon-shaped.
 
-Intended tooling: `uv` + `pytest`, PyGithub / GitHub REST, **no third-party runtime deps for rules or
-sinks**. Nothing here is built yet — see SPEC.md §"Suggested build sequence" (the CLI is build step 2,
-since it defines the canonical repo shape the extension consumes).
+Using the CLI to author rules/sinks is **constitutive** work — slow policymaking over the repo, not the
+fast operative path (authoring governed docs). Because `crayon check` / `crayon publish` execute
+repo-supplied Python (`.crayon/checks/`, `.crayon/sinks/`), those changes are code, reviewed as code:
+see [`../docs/screening-guide.md`](../docs/screening-guide.md) and SPEC.md §"Trust model".
+
+Intended tooling: `uv` + `pytest`, PyGithub / GitHub REST (+ PyYAML/PyGithub as base deps), **no
+third-party runtime deps per rule / sink / destination**. Nothing here is built yet — see SPEC.md
+§"Suggested build sequence" (the CLI is build step 2, since it defines the canonical repo shape the
+extension consumes).

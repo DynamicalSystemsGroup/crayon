@@ -108,6 +108,24 @@ crayon:
 ### Code
 - Fenced code blocks with triple backticks; language tag preserved when present.
 
+### Round-trip & settling (the basis of INV-1)
+The end-to-end cycle is `git Markdown → Docs batchUpdate → Google Doc → documents.get → Markdown`.
+Google Docs may **normalize content on import** (named-style coercion, list numbering, whitespace), so
+the Markdown re-exported immediately after a Pull can differ from the Markdown that was pushed in.
+
+To keep this deterministic:
+- A Doc's **checkpoint content hash** (`checkpoint.lastSyncContentHash`) is taken over the canonical
+  Markdown **re-exported from the Doc** at the last successful Pull/Push — *not* over the git source.
+  So an unedited Push re-exports, hashes, matches the checkpoint, and commits nothing.
+- The **first** Pull of a Doc may therefore produce one **settling commit** (the normalization delta
+  between the git source and the Doc's faithful re-export). After it settles, the branch is a fixed
+  point: Pull→Push with no edits is a no-op (INV-1, *idempotent after settle*).
+- For a **tabbed Doc** (one `docId` ↔ many `.md`), the hash domain is the ordered concatenation of the
+  tab files' canonical bytes, in `.crayon-tabs.json` `order`.
+
+Changes to this profile that affect re-export must be proven against the live round-trip rung before
+they are trusted (see SPEC.md §"Test strategy").
+
 ### Sections (for `section_drift` and file/section sources)
 - A **section** is the heading-bounded region from a heading down to (but excluding) the next heading
   of equal-or-higher level — its nested subsections included.

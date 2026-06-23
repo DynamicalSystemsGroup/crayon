@@ -121,19 +121,29 @@ already separates "untabbed Doc" from "tabbed Doc / folder", and the marker sepa
 
 ## Hard technical constraints discovered in research (these shape v1)
 
-1. **GitHub Device Flow → no server needed.** "Login with GitHub" via OAuth Device Flow needs only a
-   public `client_id`, no client secret, no token-exchange backend. This is what keeps Crayon
-   serverless. (Fine-grained PAT paste is the fallback if the OAuth app isn't available.)
+1. **GitHub App device flow → no server, least-privilege token.** "Login with GitHub" via the device
+   flow of a **GitHub App** needs only a public `client_id`, no client secret, no token-exchange
+   backend — and issues **user-to-server tokens scoped to the app's installed repos** (per-repo,
+   short-lived, refreshable), not a broad classic-OAuth `repo` token. This keeps Crayon serverless
+   *and* least-privilege on the GitHub side. **Public repos need no extra setup** (encouraged — the
+   easiest UX); **private repos are supported** but require installing the App on that repo (heavier
+   setup, only when needed). Fine-grained PAT paste remains a fallback.
 2. **Google OAuth from the extension** via `chrome.identity.launchWebAuthFlow` (PKCE) with the
    **least-privilege `drive.file` scope** — the app can fully manage *files it creates*, which is
    exactly our model (Crayon creates the folder and all Docs). Plus the Docs scope for content.
+   Because `drive.file` only covers files the app created *for this user* or the user *opened via the
+   Google Picker*, a collaborator reaching a Doc another user created performs a one-time Picker
+   **"adopt"** (see S3) — this is how the one shared folder stays least-privilege across users.
 3. **Google Docs API supports per-tab read/write but NOT tab CRUD.** You can read all tabs
    (`documents.get?includeTabsContent=true`), and write into a specific tab (`Location.tabId` in
    `batchUpdate`). You **cannot create, delete, or reorder tabs via the API today**
    ([issuetracker #470115260](https://issuetracker.google.com/issues/470115260)). → See "Tab
    handling" below; this is the single biggest design accommodation.
 4. **Docs `DeveloperMetadata`** *is* createable/updatable via `batchUpdate`. We use it to stamp each
-   Doc with its sync checkpoint (repo, branch, last-synced commit SHA, content hash).
+   Doc with its sync checkpoint (repo, branch, last-synced commit SHA, content hash). The content hash
+   is taken over the canonical Markdown **re-exported from the Doc** at last sync (not the git source),
+   so an unedited Push detects "no change" even after import normalization — this is the settling rule
+   behind INV-1.
 5. **Round-trip is lossy.** Markdown loses comments/suggestions/rich styles and complex figures. Per
    the user's decision those are **Google-side ergonomics, not versioned**. We additionally store a
    per-commit **Google Docs JSON snapshot** for fidelity/restore. Figures specifically are tiered —
@@ -349,7 +359,7 @@ meet: the author writes freely in the Doc, and the canonical record enforces a w
 ## Components
 
 ### 1. Crayon Chrome extension (Manifest V3, Node/JS toolchain)
-- **Service worker:** owns both OAuth flows (GitHub Device Flow; Google `launchWebAuthFlow`+PKCE),
+- **Service worker:** owns both OAuth flows (GitHub App device flow; Google `launchWebAuthFlow`+PKCE),
   token storage in `chrome.storage.session` (+ minimal metadata in `local`), and all API calls to
   `api.github.com`, Docs API, Drive API. Exposes a message API to the UI.
 - **Popup UI:** the "git client" — shows current repo/branch, the branch list with Doc links, the
@@ -427,6 +437,20 @@ through Pull Requests:
 
 This guarantee is exactly what the cross-UI acceptance test (UAT-D) encodes.
 
+### Two governance modes: operative (fast) vs constitutive (slow)
+Crayon separates **using** a repo from **governing** it:
+- **Operative — the primary path, fast.** Authoring version-controlled docs and running the daily
+  Pull/Push loop under whatever CI/CD governs the repo. This is UI-1 (Docs authors) and most users
+  most of the time: no code, no policy, just governed authoring.
+- **Constitutive — rare, slow, screened.** *Policymaking over the repo*: authoring the rules
+  (`crayon check`), sinks (`crayon publish`), Action templates, and — in GitHub's web UI — branch
+  protection. This is UI-3 (IDE / policy authors). Constitutive artifacts are **code, reviewed as
+  code** (see "Trust model").
+
+The security posture follows the split: the dangerous surface (custom Python in `.crayon/checks/` and
+`.crayon/sinks/`) lives only in the slow, screened constitutive layer — never on the fast operative
+path.
+
 ---
 
 ## Interfaces & contracts (software-to-software)
@@ -456,16 +480,23 @@ error}`):
 moved (never partially commits).
 
 ### S2 — Service worker ⇄ GitHub API
-Uses REST + **Git Data API** for the atomic commit (create blobs → tree → commit → update ref) and
-the Pulls/branch endpoints. **Contract:** one Push = exactly one commit (or zero on conflict);
-ref updates use the expected-SHA precondition so a race aborts rather than force-updates.
-Read surface: branch list, ref SHAs, tree, file contents, PR create.
+Authenticates as a **GitHub App user-to-server token** scoped to the app's installed repos (per-repo
+least privilege; not a broad `repo` scope). Uses REST + **Git Data API** for the atomic commit (create
+blobs → tree → commit → update ref) and the Pulls/branch endpoints. **Contract:** one Push = exactly
+one commit (or zero on conflict); ref updates use the expected-SHA precondition so a race aborts rather
+than force-updates. Read surface: branch list, ref SHAs, tree, file contents, PR create, **Checks API
+(for `checks.get`)**.
 
 ### S3 — Service worker ⇄ Google Drive/Docs API
-Scope `drive.file` (+ Docs). **Contract:** Crayon only ever touches files it created under
-`Crayon / <owner>/<repo>`. Per-Doc checkpoint stored in `DeveloperMetadata`
-(`{schemaVersion, repo, branch, path, lastSyncCommitSha, lastSyncContentHash}`). Tab content
-read/write by `tabId`; **no tab create/delete** (constraint #3).
+Scope `drive.file` (+ Docs). **Contract:** Crayon only ever touches files it created (or the user has
+adopted). A branch's Drive folder is **one canonical location** under `Crayon / <owner>/<repo>` —
+owned by a single account or a **Shared Drive**, with collaborators added as editors — **not** copied
+per user; this is what makes INV-5's branch⇄folder bijection well-defined. Because `drive.file` only
+grants access to files the app *created for this user* or the user *opened via the Google Picker*,
+**each collaborator performs a one-time Picker "adopt" per Doc** to reach Docs another user created
+(first Pull adopts what Crayon itself created for them). Per-Doc checkpoint stored in
+`DeveloperMetadata` (`{schemaVersion, repo, branch, path, lastSyncCommitSha, lastSyncContentHash}`).
+Tab content read/write by `tabId`; **no tab create/delete** (constraint #3).
 
 ### S4 — Converter contract (the central seam): Docs JSON ⇄ Canonical Markdown
 - **Docs JSON → Canonical Markdown** (Push) and **Markdown → Docs batchUpdate requests** (Pull).
@@ -527,6 +558,22 @@ materialized from `.crayon/publish.yaml` or written as custom subclasses in `.cr
 endpoint via stdlib `urllib`); real destinations are user-authored subclasses, so Crayon takes no
 third-party dependency. Supports read-only publication and pushing merged content onto other APIs.
 
+### Trust model — rules & sinks run as code (constitutive surface)
+`crayon check` and `crayon publish` execute repo-supplied Python (`.crayon/checks/`, `.crayon/sinks/`).
+That is a **constitutive, screened** surface — never the operative path — constrained to stay
+auditable, per SEC-7…9:
+- **Constrained to the ABCs (SEC-7):** the default Actions run only `crayon check` / `crayon publish`,
+  which execute `Rule`/`Sink` subclasses — not arbitrary script steps. Custom logic must be a narrow,
+  purposeful subclass, which is what makes screening tractable.
+- **Least-privilege CI (SEC-8):** PR checks run on `pull_request` (never `pull_request_target`), with a
+  least-privilege `GITHUB_TOKEN` and no secrets; publish secrets are scoped to the post-merge job on
+  the protected branch only. A malicious `.crayon/checks/` in a fork PR therefore runs with nothing
+  worth stealing.
+- **Reviewed as code (SEC-9):** changes to checks/sinks/configs/workflows are constitutive and gated by
+  branch protection; reviewers screen them with [docs/screening-guide.md](docs/screening-guide.md).
+  Constraining code to the ABC templates does not by itself prevent malice — it shrinks and
+  standardizes what a reviewer must screen.
+
 ---
 
 ## Workflows — sequence diagrams (increasing complexity)
@@ -545,6 +592,7 @@ sequenceDiagram
   U->>X: install (Web Store / dev-install — web) OR uv/pipx + crayon init (IDE)
   U->>P: authenticate (in-browser dual-OAuth — no API key; or gitignored .env on IDE)
   U->>X: bind first repo
+  Note over U,X: joining an existing shared folder? one-time Picker "adopt" per Doc (drive.file)
   U->>X: first Pull (web) / crayon check (IDE)
   X->>G: read main HEAD
   Note over U,G: terminates in an in-sync working copy — ready for W1
@@ -592,6 +640,7 @@ sequenceDiagram
   actor A as Author A (UI-1)
   actor B as Author B (UI-1)
   participant G as GitHub (canon=main)
+  Note over A,B: shared branch folder is one canonical location; B one-time Picker "adopt"s A's Docs (drive.file)
   A->>G: push branch-a + PR
   B->>G: push branch-b + PR
   A->>G: (UI-2) merge PR-a → main
@@ -681,12 +730,17 @@ are executable.** Fakes (in-memory test doubles of the GitHub + Google APIs) are
 mocks so integration tests exercise real control flow without network.
 
 ### Executable invariants (the spec, as tests)
-- **INV-1 Round-trip no-diff:** Pull→Push with no edits yields an empty commit/diff.
+- **INV-1 Round-trip no-diff (idempotent after settle):** once a branch has *settled*, Pull→Push with
+  no edits yields an empty commit/diff. Because Google Docs may normalize content on import, the first
+  Pull of a Doc may emit a single **settling commit**; the checkpoint hash is taken over the Doc's
+  *re-export* so the cycle is a fixed point thereafter (see [repo-layout.md](docs/repo-layout.md)
+  §"Round-trip & settling").
 - **INV-2 Outline isomorphism:** the `(level, text)` heading tree is identical across Pull→Push.
 - **INV-3 Idempotent Pull:** Pull then Pull again produces no further Drive changes.
 - **INV-4 Conflict safety:** on divergence, Push performs **zero** remote writes (never clobbers
   canon).
-- **INV-5 Branch bijection + mirroring:** every branch ⇄ exactly one Drive folder; delete mirrors.
+- **INV-5 Branch bijection + mirroring:** every branch ⇄ exactly one Drive folder (one canonical
+  location, owned by an account/Shared Drive — not duplicated per user); delete mirrors.
 - **INV-6 Asset stability:** unchanged image → identical `assets/<sha256>` path (no churn).
 - **INV-7 Cross-impl Canonical-Markdown equivalence:** the JS converter's output and the Python
   CLI's reader agree on the golden fixtures (kills the Risk-#9 drift).
@@ -704,6 +758,16 @@ mocks so integration tests exercise real control flow without network.
   release provenance.
 - **SEC-6 Reviewed before listing:** the SEC sweep is a required CI check, and an external/store
   security review precedes public listing.
+- **SEC-7 Constrained automation:** the default GitHub Actions invoke only `crayon check` (rules) and
+  `crayon publish` (sinks), which run `Rule`/`Sink` subclasses of the shipped ABCs — **no arbitrary
+  script steps**. Constraining repo-supplied code to narrow, purposeful templates does not by itself
+  prevent malice, but it shrinks and standardizes the surface a reviewer must screen.
+- **SEC-8 Least-privilege CI:** PR checks run on `pull_request` (never `pull_request_target`) with a
+  least-privilege `GITHUB_TOKEN` and **no secrets**; publish secrets are scoped to the post-merge job
+  on the protected branch only.
+- **SEC-9 Reviewed-as-code governance:** changes to `.crayon/checks/`, `.crayon/sinks/`, `rules.yaml`,
+  `publish.yaml`, and workflow files are **constitutive** — gated by branch protection and reviewed
+  per the screening guide ([docs/screening-guide.md](docs/screening-guide.md)).
 
 ### Test pyramid
 1. **Unit (most, pure, fast):** Docs-JSON↔Markdown converters; Canonical-MD normalizer; GFM
@@ -860,11 +924,14 @@ Sources: [Docs to Markdown + Git](https://medium.com/@vikramaruchamy/convert-goo
 5. **Figures:** image re-insertion needs a Google-fetchable URL (private-repo edge → stage via
    Drive); large binaries in git may warrant git-LFS; Tier-3 content (Drawings/charts/wrapped images)
    is snapshot-only and must be linted/warned, not silently dropped. See the Figures section.
-6. **Google `drive.file` scope** is least-privilege but means Crayon can only see Docs it created;
-   importing a pre-existing Doc into Crayon requires a one-time "adopt" step (copy into the Crayon
-   folder). Acceptable and arguably safer.
-7. **Device Flow** requires registering a GitHub OAuth app with device flow enabled (public
-   `client_id` shipped in the extension). Confirm this is acceptable vs. PAT-paste fallback.
+6. **Google `drive.file` scope** is least-privilege but means Crayon can only see Docs it created *for
+   this user* or the user opened via the Picker. Two consequences (resolved): importing a pre-existing
+   Doc needs a one-time "adopt" (copy-in); and on the **one shared branch folder**, each collaborator
+   does a one-time Picker "adopt" per Doc another user created (see S3). Acceptable and arguably safer.
+7. **GitHub App device flow** (resolved): a GitHub App (public `client_id` in the extension) issues
+   user-to-server tokens scoped to its installed repos — least-privilege vs. a classic OAuth `repo`
+   token. Public repos need no install; private repos require installing the App on the repo. PAT
+   paste remains a fallback.
 8. **GitHub API rate limits** for unauthenticated/low-tier tokens during Push (multiple file blobs +
    tree + commit). Use the Git Data API to make one atomic commit.
 9. **Two readers of Canonical Markdown** (JS converter produces it, Python CLI checks it). Drift risk
@@ -877,7 +944,8 @@ Sources: [Docs to Markdown + Git](https://medium.com/@vikramaruchamy/convert-goo
 This spec is the deliverable. When approved, a reasonable order is:
 1. **Spec polish → repo skeleton:** README, this spec checked in, the `.crayon/` layout documented.
 2. **CLI `crayon init`** first (it defines the canonical repo shape the extension consumes).
-3. **Extension auth spike:** Device Flow + Google PKCE, prove serverless dual-OAuth end to end.
+3. **Extension auth spike:** GitHub App device flow + Google PKCE, prove serverless dual-OAuth (and
+   repo-scoped tokens) end to end.
 4. **N=1 Pull/Push** (branch folder with one untabbed Doc ⇄ single `.md` + snapshot + checkpoint +
    conflict refusal). Proves the seam end to end with no tree-walking.
 5. **Tree reconciliation** (multiple untabbed Docs + sub-folders; idempotent Pull; atomic Push).
