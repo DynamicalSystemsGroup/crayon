@@ -155,12 +155,14 @@ kinds, and copy-the-pattern custom extension; **no third-party runtime deps**.
   (`rules.schema.json`) + custom discovery importing `.crayon/checks/*.py`. Starter concrete kinds:
   `outline_well_formed`, `word_count`, `section_drift`. Plus manifest/marker + frontmatter +
   Canonical-Markdown conformance checks folded into the run.
+  Per-rule `severity` (`error` → non-zero/red, `warn` → exit 0/green). Custom rules must honour the
+  pure/deterministic/network-free contract (run-twice-and-diff spot check; screening guide).
 - **Satisfies:** S6; the outline invariant; the rule model. **Acceptance gate:** **INV-2**
   (`outline_well_formed`); **UAT-B2** (skipped-level PR fails); **UAT-C1** (deterministic, network-free
   pass/fail); **UAT-C2** (author a rule — low-code YAML enable *and* a custom subclass from
-  `.crayon/checks/` both enforced). `section_drift` uses the pinned section-text definition
-  ([`repo-layout.md`](repo-layout.md) §Sections). Unit over the `outline-*` + rule fixtures.
-  **Depends on:** 2.1, 1.1.
+  `.crayon/checks/` both enforced); a `warn` rule stays green. `section_drift` uses the pinned
+  section-text definition ([`repo-layout.md`](repo-layout.md) §Sections). Unit over the `outline-*` +
+  rule fixtures. **Depends on:** 2.1, 1.1.
 
 ### 2.3 Manifest / marker / frontmatter consistency check
 - **Deliverable:** validation that `manifest.json` tree, `.crayon-tabs.json` markers, and `.md`
@@ -176,7 +178,8 @@ kinds, and copy-the-pattern custom extension; **no third-party runtime deps**.
 
 ### 2.5 `crayon init`
 - **Deliverable:** scaffold a Crayon-shaped repo — starter `intro.md`, `.crayon/` layout (incl. a
-  starter `rules.yaml` + copy-me `.crayon/checks/` examples), default Action running `crayon check`.
+  starter `rules.yaml` + copy-me `.crayon/checks/` examples), a `.gitattributes` marking
+  `.crayon/snapshots/**` generated (DR-6), default Action running `crayon check`.
   **Does not set branch protection** (human act in GitHub's web UI).
 - **Satisfies:** S7; reads GitHub creds from the gitignored `.env`/`gh` session. **Acceptance gate:**
   integration — against a throwaway repo (FakeGitHub or recorded fixtures), assert repo shape + the
@@ -255,9 +258,9 @@ with **no tree-walking** — the integration milestone where INV-1/3/4 first hol
 | 4.1 | Drive binding + branch-folder layout — **one canonical folder** under `Crayon/<owner>/<repo>/<branch>/` (account or Shared Drive), collaborators as editors; **one-time Picker "adopt" per Doc** for files another user created (`drive.file`) | S3 | integration vs FakeDrive; adopt path covered | 3.2, 1.3 |
 | 4.2 | Checkpoint read/write — `DeveloperMetadata` per `checkpoint.schema.json`; `lastSyncContentHash` taken over the Doc's **re-export** (settling), tabbed-Doc hash = ordered tab concat | S3, S5 | contract + integration | 4.1, 1.2 |
 | 4.3 | Divergence state machine — `status.get` → `in-sync\|local-ahead\|remote-ahead\|diverged` | S1 | unit over the truth table | 4.2 |
-| 4.4 | Pull (N=1) — read HEAD, convert via 3.5, write Doc, **settle** (re-export → hash → at most one settling commit), stamp checkpoint, write snapshot | S2 (read), S3 | **INV-1** settling fixed point; **INV-3** (Pull then Pull = no Drive change); **UAT-A1**. integration vs fakes | 3.5, 4.2, 4.3 |
-| 4.5 | Push (N=1, atomic) — export via 3.4, one commit via Git Data API (blobs→tree→commit→update-ref, expected-SHA), replace snapshot, optional PR | S2 | **INV-1** (unedited Pull→Push = empty diff); **UAT-A2**. integration vs fakes | 3.4, 4.4 |
-| 4.6 | Conflict refusal — both sides moved → `DIVERGED_CONFLICT`, **zero writes** | S1, S2 | **INV-4**; **UAT-A3** / **UAT-D2**. integration vs fakes | 4.5 |
+| 4.4 | Pull (N=1) — **Pull-safety guard** (refuse/confirm if local-ahead/diverged), **first-import** (mint docIds, write back), convert via 3.5, write Doc, **settle** (re-export → hash → ≤1 settling commit), stamp checkpoint, write snapshot | S2 (read), S3 | **INV-8** (no clobber); **INV-1** settling fixed point; **INV-3**; **UAT-A1**/**UAT-E4**. integration vs fakes | 3.5, 4.2, 4.3 |
+| 4.5 | Push (N=1, atomic) — export via 3.4, one commit via Git Data API (blobs→tree→commit→update-ref, expected-SHA), replace snapshot (`.gitattributes`-collapsed in review), optional PR | S2 | **INV-1** (unedited Pull→Push = empty diff); **UAT-A2**/**UAT-B1**. integration vs fakes | 3.4, 4.4 |
+| 4.6 | Conflict refusal — both sides moved → `DIVERGED_CONFLICT`, **zero branch/ref mutations** | S1, S2 | **INV-4**; **UAT-A3** / **UAT-D2**. integration vs fakes | 4.5 |
 | 4.7 | Minimal popup + status chip — Pull/Push buttons, branch/repo display, docs.google.com chip | S1, content script | E2E manual smoke (SPEC.md step-4 verification) | 4.4, 4.5, 4.6 |
 | 4.8 | CI status green/red — `checks.get` reads the GitHub Checks API; popup + chip render ✓ green / ✗ red / ◦ pending for the branch PR | S1 (`checks.get`), S2 (read) | **UAT-A5** (color matches GitHub Checks). integration vs FakeGitHub | 3.3, 4.7 |
 
@@ -274,7 +277,10 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
   staging; rectangular tables ⇄ canonical GFM with alignment; Tier-3 lint/warn chip. Gate: **INV-6**,
   **UAT-A4** (`TIER3_PRESENT` warn). Depends on WBS 3.4/3.5, 5.
 - **7 — Branch lifecycle (step 7):** create/switch/delete with recursive folder copy/trash mirroring.
-  Gate: **INV-5** (branch ⇄ exactly one folder; delete mirrors). Depends on WBS 5.
+  **Risk (DR-9):** `files.copy` mints new docIds → an explicit transactional rewrite of every
+  frontmatter `docId`, `.crayon-tabs.json`, the manifest, and checkpoints (one Drive call per Doc;
+  rate-limit-sensitive). Gate: **INV-5** (branch ⇄ exactly one folder; delete mirrors). Depends on
+  WBS 5.
 - **8 — Tabbed Docs (step 8):** opt-in `.crayon-tabs.json`; read/write existing tabs by `tabId` (no
   tab CRUD). Gate: `TAB_STRUCTURE_REQUIRED` path; tabbed round-trip. Depends on WBS 5.
 - **9 — PR + navigation glue (step 9):** Open-PR flow, github.com ⇄ Docs navigation links; finalize
@@ -348,6 +354,12 @@ gated by review** (dev-install now, Web Store later).
   (read-only publish; push to an external API, e.g. the Substack case), each **dependency-free** and a
   copy-the-pattern custom `Sink`. Realizes **W7**. Gate: a recipe runs `crayon publish` against an
   example sink in CI; scope note states targets are examples, not Crayon deps. Depends on: 2.6, O.1.
+- **O.8 Citable public example** — a real public GitHub repo (`crayon-example`) scaffolded by
+  `crayon init` with **lipsum** content (a few `.md`, manifest, snapshots, `rules.yaml`, a sample
+  custom rule) **and** a public, view-only Google Drive folder mirroring it. Fleshed out enough to be
+  linked from the doc site and the primary README as the canonical worked example. Gate: the repo
+  passes `crayon check`; the Drive folder is link-viewable; both URLs resolve from O.1. Depends on:
+  2.5, 4.5, O.1.
 
 ---
 
@@ -358,12 +370,13 @@ gated by review** (dev-install now, Web Store later).
 - **Parallelizable:** WBS 2 (CLI) runs alongside WBS 3 once 1.1/1.2/1.5 exist — different language,
   different surface, joined only at INV-7 via 1.4. The auth spike (3.2) runs concurrently with the
   converter (3.4) — they don't touch.
-- **Invariant ownership:** INV-1 → 3.5/4.5 · INV-2 → 2.2/3.4 · INV-3 → 4.4 · INV-4 → 4.6 · INV-5 →
-  WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4.
-- **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · UAT-B → 2.2/2.8/9 ·
-  **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** · C4 (interop) → WBS 5/9 ·
-  UAT-D → 4.6/9 · **UAT-E → O.3/O.4** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 (rule/sink trust) →
-  S.7**. Every invariant, UAT case, and security criterion has an owning package.
+- **Invariant ownership:** INV-1 → 3.5/4.4/4.5 · INV-2 → 2.2/3.4 · INV-3 → 4.4 · INV-4 → 4.6 · INV-5 →
+  WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4 · **INV-8 (Pull safety) → 4.4**.
+- **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · UAT-B1 → 4.5 ·
+  UAT-B2 → 2.2/2.8 · **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
+  C4 (interop) → WBS 5/9 · UAT-D → 4.6/9 · **UAT-E1-3 → O.3/O.4** · **E4 (first-import/adopt) →
+  4.4/O.3** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 → S.7**. Every invariant, UAT case, and security
+  criterion has an owning package.
 - **Governance modes:** the WBS mirrors the spec's operative/constitutive split — the fast operative
   path is WBS 3–4 (+5–8); the slow, screened constitutive surface (rules, sinks, workflows) is WBS 2.2
   / 2.6 / 2.8 with its trust model in S.7. Repo-supplied code executes only in the constitutive layer.

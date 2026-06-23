@@ -175,7 +175,9 @@ assets/<sha256>.png             # figure binaries, content-hash named (Tier 1) �
 - **`.crayon/snapshots/<docId>.json`** — the Google Docs JSON per Doc, **one per commit, replaced
   (not appended)**. Git history holds exactly one snapshot per Doc per commit; the working tree holds
   exactly one. Fidelity backstop: rehydrate any Doc losslessly at any commit. (One file per Doc now,
-  since a branch has several Docs.)
+  since a branch has several Docs.) `crayon init` scaffolds a `.gitattributes` marking
+  `.crayon/snapshots/**` as `linguist-generated` + `-diff`, so snapshots stay in history for restore
+  but **collapse in PR review** — the Markdown diff is what reviewers see (UAT-B1).
 - **`.crayon-tabs.json`** (only in tabbed-Doc dirs) maps `tab ⇄ file` and records order; it both
   disambiguates the directory and tells Pull which file goes in which tab.
 - **`.crayon/manifest.json`** is the whole-tree index for validation: every node tagged
@@ -195,7 +197,12 @@ Two explicit, git-shaped operations. No background/automatic sync (that would re
 Sync is now a **tree reconciliation** between the GitHub branch tree and the branch's Drive folder.
 
 ### Pull  (remote → local;  GitHub branch tree → Drive folder)
+0. **Pull safety (INV-8):** if the branch has un-Pushed local Doc edits (status `local-ahead` or
+   `diverged`), Pull **refuses or requires explicit confirmation** — it never silently clobbers local
+   work. (The Pull-side mirror of INV-4.) A clean `in-sync`/`remote-ahead` branch Pulls freely.
 1. Read branch HEAD `sha` and the tree (`*.md`, `.crayon-tabs.json` markers, `.crayon/manifest.json`).
+   **First import:** for a repo whose `*.md` carry no `crayon.docId` yet, Pull creates the Docs,
+   assigns docIds, and writes them back as a single settling commit (see "Round-trip & settling").
 2. Walk the tree; for each node ensure the Drive object exists and matches:
    - `file.md` → untabbed Doc: write Markdown → Doc body via `batchUpdate`.
    - `dir/ + marker` → tabbed Doc: write each `*.md` into its tab (`Location.tabId`).
@@ -220,7 +227,10 @@ Sync is now a **tree reconciliation** between the GitHub branch tree and the bra
 ### Branch lifecycle (folder-as-local, branch-as-remote)
 - **Create branch** (popup): GitHub create-ref from base → **recursively copy** the base branch's
   Drive folder (Drive has no deep-copy; walk + `files.copy` each Doc into a new folder tree) → name
-  it after the branch → stamp checkpoints. (Copy carries tab structure for free.)
+  it after the branch → stamp checkpoints. (Copy carries tab structure for free.) **`files.copy`
+  mints new `docId`s**, so the copy is followed by an atomic rewrite of every `.md` frontmatter
+  `docId`, the `.crayon-tabs.json` markers, and `.crayon/manifest.json` to the new ids, then a
+  re-stamp of each checkpoint — one Drive call per Doc (rate-limit-sensitive on large trees).
 - **Switch branch** (popup): open/focus that branch's Drive folder. (No content mutation.)
 - **Delete branch**: GitHub delete-ref → **recursively trash the matching Drive folder** (mirrored,
   per your requirement). Confirm first.
@@ -385,9 +395,10 @@ This is **thin** — just enough machinery that a policy author builds what they
 example patterns. Two symmetric primitives drive it: **rules** ("check this") and **sinks** ("write
 this there").
 - `crayon init` — scaffold a repo from a simple template: a starter `intro.md`, the `.crayon/` layout
-  (incl. a starter `rules.yaml` and copy-me examples under `.crayon/checks/`), and a default GitHub
-  Actions workflow that runs `crayon check`. It does **not** set branch protection — that is a human
-  act in GitHub's web UI (require PR + the `crayon-check` status). Uses PyGithub / GitHub REST.
+  (incl. a starter `rules.yaml` and copy-me examples under `.crayon/checks/`), a `.gitattributes` that
+  marks `.crayon/snapshots/**` generated, and a default GitHub Actions workflow that runs
+  `crayon check`. It does **not** set branch protection — that is a human act in GitHub's web UI
+  (require PR + the `crayon-check` status). Uses PyGithub / GitHub REST.
 - `crayon check` — run the repo's **rules** locally / in CI; exit non-zero on any failure (the status
   check branch protection requires). A rule is a thin Python object — a `Rule` ABC → concrete *kinds*
   → parametrized instances — that acts on a fixed **domain** (`repo` / `file` / `files` / `section` /
@@ -476,8 +487,9 @@ error}`):
 
 **Error taxonomy (stable, tested):** `AUTH_REQUIRED`, `NOT_BOUND`, `DIVERGED_CONFLICT`,
 `RATE_LIMITED`, `DRIVE_ERROR`, `GITHUB_ERROR`, `TAB_STRUCTURE_REQUIRED`, `TIER3_PRESENT` (warn).
-**Invariant:** `sync.push` returns `DIVERGED_CONFLICT` and performs **zero writes** when both sides
-moved (never partially commits).
+**Invariant:** `sync.push` returns `DIVERGED_CONFLICT` and performs **zero branch/ref mutations** when
+both sides moved (never partially commits; any orphan Git objects from an aborted build are harmless
+and gc'd).
 
 ### S2 — Service worker ⇄ GitHub API
 Authenticates as a **GitHub App user-to-server token** scoped to the app's installed repos (per-repo
@@ -533,9 +545,14 @@ thin, symmetric "check this" half:
   `word_count` *(file/section)*, `section_drift` *(sections — two+ sections must be identical text)*.
   The engine also enforces manifest/marker consistency, frontmatter validity, and Canonical-Markdown
   conformance.
+- **Severity:** each rule's `severity` is `error` (default — a `false` fails the run, non-zero exit →
+  **red** CI) or `warn` (a `false` prints a warning but exits 0 → **green** CI). Only `error` failures
+  gate a merge.
 
 **Contract:** pure, deterministic, network-free — the gate CI and (human-configured) branch protection
-depend on.
+depend on it. **Custom rules in `.crayon/checks/` MUST honour the same contract** (no network, no
+clock/random, no side effects — a rule is a pure predicate over its domain); this is enforced by review
+(the screening guide) and may be spot-checked by running a rule twice and diffing.
 
 ### S7 — CLI ⇄ GitHub API (`crayon init`)
 Creates the repo skeleton and writes the default Action (which runs `crayon check`). **Crayon does
@@ -675,7 +692,7 @@ sequenceDiagram
   A->>X: Push (feature)
   X->>D: export → Markdown, hash
   X->>G: read feature HEAD sha
-  X-->>A: DIVERGED_CONFLICT (zero writes)
+  X-->>A: DIVERGED_CONFLICT (zero ref/branch writes)
   A->>X: Pull (feature)  %% accept canon as base
   X->>D: rewrite Docs to remote HEAD
   A->>D: re-apply edits in Docs
@@ -737,13 +754,16 @@ mocks so integration tests exercise real control flow without network.
   §"Round-trip & settling").
 - **INV-2 Outline isomorphism:** the `(level, text)` heading tree is identical across Pull→Push.
 - **INV-3 Idempotent Pull:** Pull then Pull again produces no further Drive changes.
-- **INV-4 Conflict safety:** on divergence, Push performs **zero** remote writes (never clobbers
-  canon).
+- **INV-4 Conflict safety:** on divergence, Push performs **zero branch/ref mutations** (never clobbers
+  canon; aborted-build orphan objects are harmless and gc'd).
 - **INV-5 Branch bijection + mirroring:** every branch ⇄ exactly one Drive folder (one canonical
   location, owned by an account/Shared Drive — not duplicated per user); delete mirrors.
 - **INV-6 Asset stability:** unchanged image → identical `assets/<sha256>` path (no churn).
 - **INV-7 Cross-impl Canonical-Markdown equivalence:** the JS converter's output and the Python
   CLI's reader agree on the golden fixtures (kills the Risk-#9 drift).
+- **INV-8 Pull safety:** Pull never silently overwrites un-Pushed local Doc edits — on
+  `local-ahead`/`diverged` it refuses or requires explicit confirmation (the Pull-side mirror of
+  INV-4).
 
 ### Security acceptance criteria (SEC) — "nothing malicious reaches the user's browser"
 - **SEC-1 Least privilege:** minimal MV3 `permissions`/`host_permissions` (only `docs.google.com`,
@@ -852,6 +872,10 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
   only a gitignored `.env`.
 - **E3 Safe by construction:** *Given* the published extension, *then* the SEC-1…6 sweep is green and
   nothing executes outside the reviewed bundle.
+- **E4 First import / adopt:** *Given* a repo whose `*.md` predate Crayon (no `docId`), *when* a user
+  binds and Pulls, *then* Docs are created, docIds assigned and written back as one settling commit;
+  *and given* an existing shared folder, a second collaborator reaches its Docs via a one-time Picker
+  adopt — without a separate login or API key.
 
 ---
 
@@ -863,9 +887,11 @@ files as Docs (untabbed = file, tabbed = directory, folder = directory, disambig
 branch create/switch/delete with recursive folder mirroring; Markdown canonical + per-Doc per-commit
 JSON snapshot; conflict = refuse-and-pull; a thin Python CLI for scaffold + a rule engine (`check`) +
 a symmetric sink engine (`publish`) + doctor — with starter rules/sinks and copy-the-pattern custom
-extension, no third-party deps; **branch protection configured by humans in GitHub's web UI (not
-duplicated by Crayon)**; the plugin surfaces green/red CI status; autogenerated GitHub Pages doc site +
-dev-install onboarding path (Web Store listing gated by the SEC sweep + external review).
+extension, **no third-party deps per rule/sink/destination** (PyYAML/PyGithub are base CLI deps);
+**branch protection configured by humans in GitHub's web UI (not duplicated by Crayon)**; the plugin
+surfaces green/red CI status; autogenerated GitHub Pages doc site + dev-install onboarding path (Web
+Store listing gated by the SEC sweep + external review); and a **citable public example** — a public
+GitHub repo + a public (view-only) Drive folder, lipsum content — referenced from the doc site.
 
 (Unsupported *workflows* are listed under "Workflows — … out of scope"; this section lists deferred
 *features/integrations*.)

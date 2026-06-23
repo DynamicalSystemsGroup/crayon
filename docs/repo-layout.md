@@ -33,6 +33,14 @@ profile both the JS converter (producer) and the Python CLI (consumer/checker) o
       *.py
     snapshots/
       <docId>.json                # raw Docs documents.get JSON, REPLACED each commit
+.gitattributes                    # marks .crayon/snapshots/** linguist-generated + -diff
+```
+
+`crayon init` writes a `.gitattributes` so the per-commit JSON snapshots stay in history (fidelity
+backstop) but **collapse in PR review** — reviewers see the Markdown diff, not the snapshot blob:
+
+```gitattributes
+.crayon/snapshots/** linguist-generated -diff
 ```
 
 `.crayon/rules.yaml` and `.crayon/publish.yaml` are YAML for low-code authoring but validate against

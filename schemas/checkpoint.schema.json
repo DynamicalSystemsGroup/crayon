@@ -30,8 +30,8 @@
     },
     "lastSyncContentHash": {
       "type": "string",
-      "minLength": 1,
-      "description": "Hash of the Canonical Markdown content at the last sync; compared against a fresh export to detect local edits."
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "sha256 of the Canonical Markdown RE-EXPORTED from the Doc at the last sync (the settling rule; for a tabbed Doc, of the ordered concatenation of its tab files' canonical bytes). Format 'sha256:<hex>'. Compared against a fresh export to detect local edits."
     }
   }
 }
