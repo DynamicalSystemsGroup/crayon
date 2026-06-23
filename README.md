@@ -1,0 +1,54 @@
+# Crayon
+
+**A deliberately small seam between Google Docs (ergonomic editor) and GitHub (canonical record).**
+
+Write in Google Docs; govern in GitHub. Crayon assigns each system the role it's good at, using
+git's own local/remote mental model:
+
+- **GitHub = remote.** Canon is the remote `main` branch. Branches, history, PRs, and policy live here.
+- **Google Doc/Drive = shared local working copy.** Ergonomic, multiplayer, disposable.
+- **Crayon Chrome extension = the working-copy tooling** — pull, push, branch, open PR, navigate.
+- **`crayon` Python CLI = the governance layer** — scaffold a repo, author/enforce CI policy.
+
+Crayon is **opinionated and serverless**: it supports one blessed workflow well, and the extension
+talks directly to the GitHub + Google APIs from the browser (no backend to host).
+
+## Status
+
+**Specification stage — no implementation code yet.** The full design is in **[SPEC.md](SPEC.md)**.
+This repository currently contains:
+
+| Path | What it is |
+|---|---|
+| [`SPEC.md`](SPEC.md) | The approved v1 specification (the source of truth for the design). |
+| [`docs/repo-layout.md`](docs/repo-layout.md) | The on-disk repo layout + the **Canonical Markdown** profile. |
+| [`schemas/`](schemas/) | JSON Schemas for the on-disk data contracts (S5). |
+| [`tests/fixtures/`](tests/fixtures/) | Where shared golden fixtures will live (JS + Python consume them). |
+| [`extension/`](extension/) | Placeholder for the Chrome extension (not yet implemented). |
+| [`cli/`](cli/) | Placeholder for the `crayon` Python CLI (not yet implemented). |
+
+## The core model in one picture
+
+```
+GitHub repo  ──────────────  Google Drive  "Crayon / <owner>/<repo>"
+  ├ branch: main     ⇄  Folder "main"
+  │    ├ intro.md            ⇄  Doc "intro"           (untabbed Doc = one file)
+  │    └ appendix/           ⇄  Doc "appendix" + tabs (tabbed Doc = a directory of files)
+  │         ├ a.md                ⇄  tab "a"
+  │         └ .crayon-tabs.json   (marker: this dir IS a tabbed Doc, not a plain folder)
+  └ branch: draft   ⇄  Folder "draft"
+```
+
+A branch is a Drive folder; a file is a Doc; tabs are optional within-file grouping. See
+[SPEC.md](SPEC.md) for the invariants, sync protocol, fidelity tiers, interface contracts, sequence
+diagrams, and the TDD/UAT plan.
+
+## Next steps (build sequence)
+
+Per SPEC.md §"Suggested build sequence": (1) ✅ repo skeleton + spec, (2) `crayon init` CLI,
+(3) extension auth spike, (4) N=1 Pull/Push, … Each step is TDD — tests and the named invariants
+(INV-1…INV-7) come before code.
+
+## License
+
+TBD.

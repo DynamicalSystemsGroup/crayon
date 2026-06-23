@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/manifest.schema.json",
+  "title": "Crayon branch manifest (.crayon/manifest.json)",
+  "description": "Branch-scoped whole-tree index. One per branch root. The authoritative map of every node in the branch tree to its kind and (where applicable) its Google Doc id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "branch", "tree"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bumped on any breaking change to this schema."
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git branch name this manifest describes (also the Drive folder name)."
+    },
+    "tree": {
+      "type": "array",
+      "description": "Flat list of nodes; hierarchy is implied by the slash-separated path.",
+      "items": { "$ref": "#/$defs/node" }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative POSIX path. For 'file' a .md path; for 'doc'/'folder' a directory path (no trailing slash)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["file", "doc", "folder"],
+          "description": "'file' = untabbed Doc (single .md); 'doc' = tabbed Doc (directory + .crayon-tabs.json); 'folder' = plain Drive folder (directory, no marker)."
+        },
+        "docId": {
+          "type": "string",
+          "description": "Google Doc id. Required for 'file' and 'doc'; absent for 'folder'."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["file", "doc"] } } },
+          "then": { "required": ["docId"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "folder" } } },
+          "then": { "not": { "required": ["docId"] } }
+        }
+      ]
+    }
+  }
+}

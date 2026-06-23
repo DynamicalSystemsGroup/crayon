@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/crayon-tabs.schema.json",
+  "title": "Crayon tabbed-Doc marker (.crayon-tabs.json)",
+  "description": "Present in a directory IFF that directory is materialized as a single tabbed Google Doc (not a plain Drive folder). Self-describing: maps each tab to a .md file and records tab order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "docId", "order", "tabs"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "docId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Google Doc id this directory maps to."
+    },
+    "order": {
+      "type": "array",
+      "description": "Tab order as a list of the sibling .md filenames (without directory prefix). Must be a permutation of the 'file' values in 'tabs'.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "tabs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tabId", "title", "file"],
+        "properties": {
+          "tabId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Immutable Google Docs tab id (Docs API can write into it but not create/delete it)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Tab title as shown in the Docs UI."
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sibling .md filename this tab maps to (no directory prefix)."
+          }
+        }
+      }
+    }
+  }
+}

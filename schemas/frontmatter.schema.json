@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/frontmatter.schema.json",
+  "title": "Crayon Markdown frontmatter",
+  "description": "YAML frontmatter at the top of every Crayon-managed .md file. Key order is fixed (title, subtitle, crayon) per the Canonical Markdown profile in docs/repo-layout.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "crayon"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Maps to the Doc/tab TITLE paragraph style. The document's single top-level title (not an H1)."
+    },
+    "subtitle": {
+      "type": "string",
+      "description": "Optional. Maps to the SUBTITLE paragraph style."
+    },
+    "crayon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["docId"],
+      "properties": {
+        "docId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Google Doc id backing this file."
+        },
+        "tabId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Present only when this .md is a tab within a tabbed Doc; identifies which tab."
+        }
+      }
+    }
+  }
+}

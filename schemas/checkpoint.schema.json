@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/checkpoint.schema.json",
+  "title": "Crayon per-Doc sync checkpoint",
+  "description": "Stored in each Google Doc's DeveloperMetadata (not in the repo). The Google side of divergence detection: records the commit the Doc was last synced to and the content hash at that sync.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repo", "branch", "path", "lastSyncCommitSha", "lastSyncContentHash"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "repo": {
+      "type": "string",
+      "pattern": "^[^/]+/[^/]+$",
+      "description": "GitHub repo in 'owner/name' form."
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Branch this Doc is a working copy of."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repo-relative path of the file/doc this checkpoint is for."
+    },
+    "lastSyncCommitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Branch HEAD commit SHA at the last successful Pull/Push."
+    },
+    "lastSyncContentHash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Hash of the Canonical Markdown content at the last sync; compared against a fresh export to detect local edits."
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# Node / extension
+node_modules/
+dist/
+*.log
+
+# Python / CLI
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+.uv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local secrets (never commit OAuth client config with secrets)
+*.local
+.env
