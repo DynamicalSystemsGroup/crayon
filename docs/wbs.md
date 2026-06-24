@@ -101,8 +101,8 @@ every later package's gate runs against them.
 
 ### 1.2 Shared schema-validation utility (both languages)
 - **Deliverable:** a thin validator each side uses against `schemas/` (`manifest`, `crayon-tabs`,
-  `frontmatter`, `checkpoint`, `rules`, `publish`), asserting `schemaVersion`. YAML configs are parsed
-  to JSON before validation.
+  `frontmatter`, `checkpoint`, `rules`, `publish`, `template`), asserting `schemaVersion`. YAML configs
+  are parsed to JSON before validation.
 - **Satisfies:** S5. **Acceptance gate:** contract — every S5 fixture validates; malformed fixtures
   fail. **Depends on:** WBS 0.
 
@@ -278,8 +278,9 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
   staging; rectangular tables ⇄ canonical GFM with alignment; Tier-3 lint/warn chip. Gate: **INV-6**,
   **UAT-A4** (`TIER3_PRESENT` warn). Depends on WBS 3.4/3.5, 5.
 - **7 — Branch lifecycle (step 7):** create/switch/delete with recursive folder copy/trash mirroring,
-  plus **branch from recommended changes** (copy `main` with reviewers' suggestions materialized via
-  `documents.get?suggestionsViewMode=PREVIEW_SUGGESTIONS_ACCEPTED`, constraint #8 — accept-all in v1).
+  plus **branch from recommended changes** (`branch.fromRecommended` — copy `main` with reviewers'
+  suggestions materialized via `documents.get?suggestionsViewMode=PREVIEW_SUGGESTIONS_ACCEPTED`,
+  constraint #8 — accept-all in v1; **realizes W8**).
   **Risk (DR-9):** `files.copy` mints new docIds → an explicit transactional rewrite of every
   frontmatter `docId`, `.crayon-tabs.json`, the manifest, and checkpoints (one Drive call per Doc;
   rate-limit-sensitive). Gate: **INV-5** (branch ⇄ exactly one folder; delete mirrors); **UAT-A6**
@@ -367,12 +368,20 @@ gated by review** (dev-install now, Web Store later).
   (read-only publish; push to an external API, e.g. the Substack case), each **dependency-free** and a
   copy-the-pattern custom `Sink`. Realizes **W7**. Gate: a recipe runs `crayon publish` against an
   example sink in CI; scope note states targets are examples, not Crayon deps. Depends on: 2.6, O.1.
-- **O.8 Citable public example** — a real public GitHub repo (`crayon-example`) scaffolded by
-  `crayon init` with **lipsum** content (a few `.md`, manifest, snapshots, `rules.yaml`, a sample
-  custom rule) **and** a public, view-only Google Drive folder mirroring it. Fleshed out enough to be
-  linked from the doc site and the primary README as the canonical worked example. Gate: the repo
-  passes `crayon check`; the Drive folder is link-viewable; both URLs resolve from O.1. Depends on:
-  2.5, 4.5, O.1.
+- **O.8 Citable public example** — the `crayon-template` seed **instantiated once publicly** (via O.9):
+  a real public GitHub repo (`crayon-example`) with **lipsum** content (a few `.md`, manifest,
+  snapshots, `rules.yaml`, a sample custom rule) **and** a public, view-only Google Drive folder
+  mirroring it. Linked from the doc site and README as the canonical worked example (template spawns,
+  example cites). Gate: the repo passes `crayon check`; the Drive folder is link-viewable; both URLs
+  resolve from O.1. Depends on: O.9, 4.5, O.1.
+- **O.9 Template seed + "New from template"** — (a) the `crayon-template` **GitHub template repo**: a
+  docId-less lipsum seed + `.crayon/template.json` marker (`template.schema.json`); `crayon check`/
+  doctor honour **template mode** (skip docId-binding rules). (b) `repo.createFromTemplate` in the
+  extension: generate-from-template (needs the App installed on the owner — the onboarding install;
+  public is the default visibility, private offered) → provision Drive
+  + **first-import** (mint docIds, drop marker, settling commit) → set read-only `main` mirror perms.
+  Realizes **W9**. Gate: **UAT-E5** (new repo ⇄ matched Drive folder with live lipsum Docs in ~2–3
+  clicks); template instantiates to a `crayon check`-clean live repo. Depends on: 2.5, 4.1, 4.4, O.1.
 
 ---
 
@@ -391,8 +400,8 @@ gated by review** (dev-install now, Web Store later).
   re-projection) → WBS 9m** · **B5 (capture-before-overwrite) → WBS 9m** · **C2 (author a rule) →
   2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
   C4 (interop) → WBS 5/9 · UAT-D → 4.6/9 · **UAT-E1-3 → O.3/O.4** · **E4 (first-import/adopt) →
-  4.4/O.3** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 → S.7**. Every invariant, UAT case, and security
-  criterion has an owning package.
+  4.4/O.3** · **E5 (new from template) → O.9** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 → S.7**.
+  Every invariant, UAT case, and security criterion has an owning package.
 - **Governance modes:** the WBS mirrors the spec's operative/constitutive split — the fast operative
   path is WBS 3–4 (+5–8); the slow, screened constitutive surface (rules, sinks, workflows) is WBS 2.2
   / 2.6 / 2.8 with its trust model in S.7. Repo-supplied code executes only in the constitutive layer.

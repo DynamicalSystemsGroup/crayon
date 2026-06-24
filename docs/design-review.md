@@ -57,6 +57,21 @@ nothing is silently lost, with explicit tests T-MR-1..T-MR-7.
 Landed in: "Mirror refresh: capture-before-overwrite" §, INV-10, UAT-B5, Test strategy (T-MR-*),
 scope; WBS 9m, coverage.
 
+## Post-review design addition: "New from template" (2–3-click start)
+Easy-start path for a new doc/repo, decided after review:
+- **Canon-first generate-from-template:** the extension's `repo.createFromTemplate` runs
+  `POST /repos/{owner}/{repo}/generate` from a **docId-less `crayon-template` seed**
+  (`.crayon/template.json` marker; `template.schema.json`), then provisions the matched Drive folder +
+  **first-imports** (mints docIds, drops the marker, settling commit) + sets read-only `main` mirror
+  perms — all under the user's Google authority. **Public by default** (no App install); **extension
+  only** (IDE keeps `crayon init`). Lipsum → non-empty → visually confirmable.
+- **Template ≠ example:** the seed *spawns*; the **citable example (O.8)** is that seed *instantiated
+  once publicly*. (`frontmatter`/`manifest` schemas describe the **live** shape; template mode skips
+  docId-binding rules.)
+- Landed in: "Starting a new repo: templates" §, S1 `repo.createFromTemplate` / `branch.fromRecommended`,
+  S2 (generate-from-template), Components popup, W9, UAT-E5, scope, `schemas/template.schema.json`; WBS
+  O.8/O.9, coverage.
+
 ## Scope added during this review
 - **Citable public example (WBS O.8):** a public GitHub repo (`crayon-example`, lipsum content, full
   `.crayon/` layout, a sample custom rule) + a public view-only Drive folder mirroring it, linkable

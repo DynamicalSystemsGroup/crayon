@@ -11,6 +11,7 @@ both the JS extension and the Python CLI validate against. All carry `schemaVers
 | [`checkpoint.schema.json`](checkpoint.schema.json) | Google Doc `DeveloperMetadata` (not in repo) | Per-Doc sync checkpoint for divergence detection. |
 | [`rules.schema.json`](rules.schema.json) | `.crayon/rules.yaml` | Materializes `Rule` instances for `crayon check` (starter kinds + custom `.crayon/checks/`). |
 | [`publish.schema.json`](publish.schema.json) | `.crayon/publish.yaml` | Materializes `Sink` instances for `crayon publish` (dependency-free starter kinds + custom `.crayon/sinks/`). |
+| [`template.schema.json`](template.schema.json) | `.crayon/template.json` | Marks a pre-instantiation **template seed** (docId-less); instantiation mints docIds and drops it. |
 
 > Branch protection is **not** a Crayon schema — it is configured by a human in GitHub's web UI;
 > Crayon supplies the `crayon-check` status, GitHub supplies the gate.

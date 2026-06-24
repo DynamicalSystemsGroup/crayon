@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://w3id.org/crayon/schemas/checkpoint.schema.json",
   "title": "Crayon per-Doc sync checkpoint",
-  "description": "Stored in each Google Doc's DeveloperMetadata (not in the repo). The Google side of divergence detection: records the commit the Doc was last synced to and the content hash at that sync.",
+  "description": "Stored in each Google Doc's DeveloperMetadata (not in the repo). The Google side of divergence detection: records the commit the Doc was last synced to and the content hash at that sync. For the read-only `main` mirror, `lastSyncCommitSha` doubles as the projected canon SHA (MR-3) and `refreshLockUntil` carries the auto-expiring refresh timelock (MR-6).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "repo", "branch", "path", "lastSyncCommitSha", "lastSyncContentHash"],
@@ -32,6 +32,11 @@
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "sha256 of the Canonical Markdown RE-EXPORTED from the Doc at the last sync (the settling rule; for a tabbed Doc, of the ordered concatenation of its tab files' canonical bytes). Format 'sha256:<hex>'. Compared against a fresh export to detect local edits."
+    },
+    "refreshLockUntil": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Read-only `main` mirror only (optional). Auto-expiring timelock (MR-6): while now < refreshLockUntil the Doc is held view-only for the capture->overwrite window; a dead refresh lapses at this time so the Doc is never stuck."
     }
   }
 }

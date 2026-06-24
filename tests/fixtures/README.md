@@ -20,6 +20,11 @@ Planned contents (added alongside the code that needs them, TDD-style):
   deterministic, dependency-free write (`crayon publish`).
 - `settling/` — a Docs import whose first re-export differs from the source Markdown, asserting the
   single **settling commit** and that the subsequent unedited cycle is a no-op (INV-1).
+- `mirror-refresh/` — a `main`-mirror Doc carrying **comments + suggestions** plus an advanced canon,
+  for the capture-before-overwrite tests (T-MR-1..T-MR-7 / INV-10): captured state, the
+  `crayon-review/<sha>` tag, idempotence, no-loop, and the timelock.
+- `template/` — a docId-less **template seed** (`.crayon/template.json` + lipsum `.md`), asserting
+  template-mode `crayon check` and that instantiation mints docIds to a valid live repo (UAT-E5).
 
 Each conversion fixture is a matched triple: `(docs-json input, expected canonical markdown, expected
 re-import Docs requests)`. If a rule in the profile changes, its fixtures change in the same commit.

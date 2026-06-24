@@ -6,7 +6,8 @@ Write in Google Docs; govern in GitHub. Crayon assigns each system the role it's
 git's own local/remote mental model:
 
 - **GitHub = remote.** Canon is the remote `main` branch. Branches, history, PRs, and policy live here.
-- **Google Doc/Drive = shared local working copy.** Ergonomic, multiplayer, disposable.
+- **Google Doc/Drive = shared local working copy.** Ergonomic, multiplayer, disposable. (The `main`
+  mirror is **read-only** — a projection of canon; you edit on branches.)
 - **Crayon Chrome extension = the working-copy tooling** — pull, push, branch, open PR, navigate.
 - **`crayon` Python CLI = minimalist governance tooling** — scaffold a repo, author CI **rules**
   (`check`) and content **routes** (`publish`); branch protection is configured in GitHub's web UI.

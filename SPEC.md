@@ -394,8 +394,8 @@ meet: the author writes freely in the Doc, and the canonical record enforces a w
   `api.github.com`, Docs API, Drive API. Exposes a message API to the UI.
 - **Popup UI:** the "git client" — shows current repo/branch, the branch list with Doc links, the
   branch's **CI status as green ✓ (passed) / red ✗ (failed) / ◦ pending** (from the GitHub Checks
-  API), and buttons: **Pull**, **Push**, **Open PR**, **New branch**, **Delete branch**, **Open on
-  GitHub**.
+  API), and buttons: **New from template**, **Pull**, **Push**, **Open PR**, **New branch**, **Branch
+  from recommended changes** (from read-only `main`), **Delete branch**, **Open on GitHub**.
 - **Content scripts (thin):**
   - on `docs.google.com`: detect the active Doc, surface a small status chip (branch, in-sync /
     diverged, and the branch's **green/red CI state**), and a Pull/Push affordance.
@@ -550,6 +550,25 @@ suggestions) **plus** its Drive comments via the Comments API — comments are *
 > to GitHub PR/issue comments): MR-1…MR-7 guarantee *nothing is silently lost*, not that comments are
 > rendered as GitHub comments.
 
+### Starting a new repo: templates & "New from template"
+The fast way to start a new doc/repo (the operative, 2–3-click path) is **canon-first generate from a
+template**, then project to Drive — not the IDE `crayon init` (that stays the constitutive path):
+- **Template seed.** A **GitHub template repo** (`crayon-template`) holds lipsum content + the
+  `.crayon/` layout + a **`.crayon/template.json` marker** (`template.schema.json`). It is *docId-less*
+  — bound to no Drive folder — so `frontmatter.schema.json` / `manifest.schema.json` (which describe
+  the **live**, instantiated shape) do not apply to it; in **template mode** `crayon check`/doctor skip
+  the docId-binding rules. (The **citable example**, O.8, is this template **instantiated once
+  publicly** — template spawns, example cites.)
+- **Instantiate (W9).** `repo.createFromTemplate` (1) **generates** a new repo via
+  `POST /repos/{owner}/{repo}/generate` — creating a repo needs the **GitHub App installed on the
+  target owner** (the one-time onboarding install; not gated by visibility), and **public is the
+  default visibility** (simplest; private is offered) — then (2) the extension provisions the matched
+  Drive folder and
+  **mints Docs for every file (first-import, DR-8/UAT-E4)**, writes the real docIds back as one settling
+  commit, **drops the template marker**, and sets the read-only `main` mirror permissions — all under
+  the user's own Google authority. Lipsum makes the result non-empty, so success is visually obvious.
+- **Result:** a new GitHub repo ⇄ matched Drive folder, schema-valid and live, in ~2–3 clicks.
+
 ---
 
 ## Interfaces & contracts (software-to-software)
@@ -565,8 +584,13 @@ error}`):
 - `auth.status` → `{github:bool, google:bool}`
 - `auth.login(provider)` → device-flow / PKCE result
 - `repo.bind({owner, repo})` / `repo.current` → binding
+- `repo.createFromTemplate({template, owner, name, private?:bool})` → `{repoUrl, driveFolderUrl}` —
+  generate a new repo from a Crayon **template** seed, then provision its matched Drive folder + mint
+  Docs (first-import) under the user's authority. Public by default. (Workflow W9.)
 - `branch.list` → `[{name, hasFolder, hasBranch, ahead, behind}]`
 - `branch.create({from, name})` / `branch.delete({name})` / `branch.switch({name})`
+- `branch.fromRecommended({from})` → `{name}` — branch from `main` with reviewers' suggestions
+  materialized (the read-only-mirror "branch from recommended changes"; constraint #8).
 - `sync.pull({branch})` → `{written:[paths], pulledSha}`
 - `sync.push({branch, openPR?:bool})` → `{commitSha, prUrl?}`
 - `status.get({branch})` → `{state: "in-sync"|"local-ahead"|"remote-ahead"|"diverged", ...}`
@@ -585,7 +609,8 @@ least privilege; not a broad `repo` scope). Uses REST + **Git Data API** for the
 blobs → tree → commit → update ref) and the Pulls/branch endpoints. **Contract:** one Push = exactly
 one commit (or zero on conflict); ref updates use the expected-SHA precondition so a race aborts rather
 than force-updates. Read surface: branch list, ref SHAs, tree, file contents, PR create, **Checks API
-(for `checks.get`)**.
+(for `checks.get`)**, and **generate-from-template** (`POST /repos/{owner}/{repo}/generate`, for
+`repo.createFromTemplate`). The capture tag (MR-2) is pushed to `refs/tags/crayon-review/*`.
 
 ### S3 — Service worker ⇄ Google Drive/Docs API
 Scope `drive.file` (+ Docs). **Contract:** Crayon only ever touches files it created (or the user has
@@ -835,6 +860,21 @@ sequenceDiagram
   G->>M: on merge → CAPTURE review state to git, THEN re-project from canon (Action if configured, else next Pull)
 ```
 
+### W9 — New from template (the 2–3-click start; UI-1)
+```mermaid
+sequenceDiagram
+  actor U as User (UI-1)
+  participant X as Crayon (ext)
+  participant G as GitHub
+  participant D as Google Drive/Docs
+  U->>X: "New from template" → name (public by default)
+  X->>G: POST /repos/{owner}/{repo}/generate  %% canon created from crayon-template seed
+  X->>D: provision Drive folder; mint a Doc per file (first-import)
+  X->>G: write real docIds back + drop .crayon/template.json (one settling commit)
+  X->>D: set read-only main mirror permissions (commenter)
+  X-->>U: new repo ⇄ Drive folder with lipsum Docs — "Open in Docs"
+```
+
 ### Explicitly out of scope / unsupported (kept opinionated to keep complexity low)
 - **Live, real-time sync across the seam.** No CRDT/OT bridge between Docs multiplayer and git. You
   converge at `main` via Pull/Push, not continuously.
@@ -913,7 +953,8 @@ mocks so integration tests exercise real control flow without network.
    conformance** for Canonical Markdown shared by the JS and Python suites (INV-7).
 3. **Integration (with API fakes):**
    - Extension flows against `FakeGitHub` + `FakeDrive`: pull, push, branch create/delete, conflict
-     refusal, tabbed-Doc read/write, Pull-safety — asserts INV-1..6 + INV-8 end to end without network.
+     refusal, tabbed-Doc read/write, Pull-safety, read-only-`main` Push refusal, new-from-template —
+     asserts INV-1..6 + INV-8 + INV-9 end to end without network.
    - **Mirror-refresh** against `FakeGitHub` + `FakeDrive` (with comments + suggestions modelled),
      asserting INV-10 / MR-1..MR-7:
      - **T-MR-1 capture-before-overwrite:** comments+suggestions are committed and tagged
@@ -1025,6 +1066,10 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
   binds and Pulls, *then* Docs are created, docIds assigned and written back as one settling commit;
   *and given* an existing shared folder, a second collaborator reaches its Docs via a one-time Picker
   adopt — without a separate login or API key.
+- **E5 New from template:** *Given* a logged-in user and the `crayon-template` seed, *when* they pick
+  "New from template" and a name, *then* in ~2–3 clicks a new GitHub repo is generated and a matched
+  Drive folder appears with the lipsum content as live Docs (docIds minted, marker dropped, read-only
+  `main` mirror set) — public by default, no separate login or API key, success visually obvious.
 
 ---
 
@@ -1037,7 +1082,9 @@ branch create/switch/delete with recursive folder mirroring; **a read-only `main
 access; refreshed from canon by a post-merge Action when a service identity is configured, else by
 triggered Pull; Push refused — INV-9; **capture-before-overwrite** so review state is archived to git
 first, idempotent and loop-free — INV-10) with **"branch from recommended changes"** materializing
-reviewers' suggestions onto a new branch; Markdown canonical + per-Doc per-commit
+reviewers' suggestions onto a new branch; **"New from template"** (extension-only, public-by-default:
+GitHub generate-from-template a docId-less `crayon-template` seed, then provision Drive + first-import
+in ~2–3 clicks — W9); Markdown canonical + per-Doc per-commit
 JSON snapshot; conflict = refuse-and-pull; a thin Python CLI for scaffold + a rule engine (`check`) +
 a symmetric sink engine (`publish`) + doctor — with starter rules/sinks and copy-the-pattern custom
 extension, **no third-party deps per rule/sink/destination** (PyYAML/PyGithub are base CLI deps);
