@@ -490,11 +490,14 @@ read-only receiver, not an authoring surface:**
   (read + comment + **suggest**, *not* edit; owned by a Crayon service identity or the repo owner).
   Editors elsewhere; here you can only observe and propose. **Push is refused from the `main` folder**
   (INV-9) — you cannot author canon in Docs.
-- **It is overwritten by canon, never the reverse.** The mirror is re-projected from the GitHub
-  default branch — **automatically on merge** via a post-merge Action when a service identity is
-  configured (a Drive sink / automated Pull, post-merge-scoped per SEC-8), **and/or** on any **triggered
-  Pull** of `main`. Either way it is a pure projection; because `main` is never authored locally, the
-  refresh is a clean overwrite (no divergence to lose).
+- **It is overwritten by canon, never the reverse — but capture-before-overwrite.** The mirror is
+  re-projected from the GitHub default branch — **automatically on merge** via a post-merge Action when
+  a service identity is configured (a Drive sink / automated Pull, post-merge-scoped per SEC-8),
+  **and/or** on any **triggered Pull** of `main`. The overwrite would wipe the review state
+  (comments/suggestions) that lives only on the mirror, and `main` is never Pushed, so git would
+  otherwise have no record of it. The refresh therefore **captures that state into git immediately
+  before overwriting** — and its triggering/sequencing is deliberately non-naive (it must not loop or
+  double-wipe). See "Mirror refresh: capture-before-overwrite" and **INV-10**.
 - **To change canon, branch.** Editing requires a **branch** — a programmatically generated copy
   (Drive folder copy + new docIds, per DR-9) that *is* editable. You edit there, Crayon-push to the
   branch, then open a PR on GitHub. Merge conflicts surface as **GitHub PR conflicts** resolved with
@@ -505,6 +508,47 @@ read-only receiver, not an authoring surface:**
   constraint #8 — and writes the result as the new branch). The suggested diff becomes a real git diff
   on a real branch, ready to push + PR. (Free-form comments are a review surface retained on the
   mirror, Tier-3, not versioned to GitHub in v1.)
+
+### Mirror refresh: capture-before-overwrite (sequencing)
+A refresh re-projects the read-only `main` mirror from canon. Because the overwrite destroys the review
+state that lives only on the mirror, and `main` is never Pushed, the refresh is a **carefully
+sequenced** operation, not a blind overwrite. These are hard requirements (**MR-1…MR-7**); the headline
+property is **INV-10**. ("Captured review state" = each mirror Doc's `documents.get` (incl.
+suggestions) **plus** its Drive comments via the Comments API — comments are *not* in the Docs JSON.)
+
+- **MR-1 Capture precedes overwrite.** For every mirror Doc it will overwrite, the refresh first reads
+  the Doc's full current review state and **commits it to git before writing any new content.** The
+  order is total per Doc: *capture → commit → overwrite.* (INV-10.)
+- **MR-2 Loop-free *and discoverable* capture target.** Captured state is committed and pointed to by
+  a **git tag** — a capture commit (its tree holds each Doc's review state; parented at the canon SHA
+  for context, so it is *not* on `main`'s history), tagged `crayon-review/<defaultBranchSha>` (with a
+  counter/timestamp suffix if a later refresh at the same SHA captures new review state). A tag is a
+  `refs/tags/` ref: **discoverable** (`git tag`, GitHub's tags UI), yet **not a branch** — and the
+  refresh Action triggers only on default-branch pushes/merges, **never on tags**, so pushing the
+  capture tag cannot fire a refresh. Never written to protected `main` content.
+- **MR-3 Idempotent / projected-SHA guard.** The refresh records the canon default-branch SHA it last
+  projected (in the mirror Docs' `DeveloperMetadata` and as the capture tag). It is a **no-op** when
+  canon has not advanced past that SHA *and* no new review state exists — **no capture, no content
+  write.** Re-running never produces a second wipe or tag churn. (MR-2 + MR-3 together kill the loop: a
+  capture is a tag, not a `main` advance, so the post-merge Action cannot re-fire on it.)
+- **MR-4 Serialized triggers.** Concurrent triggers (the Action; an owner-triggered Pull of `main`)
+  are serialized by the expected-SHA precondition + the timelock (MR-6), so two refreshes cannot
+  interleave capture/overwrite. A trigger whose canon SHA is already projected is **dropped** (MR-3).
+- **MR-5 Owner-executed.** Only the identity that **owns** the `main` folder (service identity / repo
+  owner) performs a refresh; commenters cannot overwrite. Both trigger paths run under that identity.
+- **MR-6 Mandatory timelock (closes the race).** A refresh **always** takes a **time-bounded lock** on
+  each mirror Doc — it downgrades the Doc to view-only (no comment/suggest) for the
+  capture→overwrite window, then restores commenter — so no annotation can land mid-refresh. The lock
+  carries an **auto-expiry** (a `refreshLockUntil` marker in `DeveloperMetadata`): if a refresh dies,
+  the lock lapses and the Doc is restored, never stuck. The lock **length is configurable but floored**
+  at a small minimum sufficient to cover the capture→overwrite window (race-closing). Not optional.
+- **MR-7 Recoverability.** Any captured state is retrievable from the `crayon-review/<sha>*` tags
+  keyed by `(defaultBranchSha, docId)` — so "read the prior state from history" is deterministic and
+  the archive is browsable in the GitHub tags UI.
+
+> This raw, recoverable archive is distinct from the deferred **structured** capture (mapping comments
+> to GitHub PR/issue comments): MR-1…MR-7 guarantee *nothing is silently lost*, not that comments are
+> rendered as GitHub comments.
 
 ---
 
@@ -788,7 +832,7 @@ sequenceDiagram
   X->>M: read Docs (suggestionsViewMode=PREVIEW_SUGGESTIONS_ACCEPTED)
   X-->>R: new editable branch folder = main + materialized suggested diff
   R->>X: edit further + Push (branch) + open PR
-  G->>M: on merge → mirror re-projected from canon (Action if configured, else next Pull)
+  G->>M: on merge → CAPTURE review state to git, THEN re-project from canon (Action if configured, else next Pull)
 ```
 
 ### Explicitly out of scope / unsupported (kept opinionated to keep complexity low)
@@ -831,6 +875,11 @@ mocks so integration tests exercise real control flow without network.
 - **INV-9 Read-only canon mirror:** the default-branch (`main`) Drive mirror is a projection of canon
   — **Push from it is refused** (commenter access; never an authoring surface) and it is overwritten by
   refresh/Pull, never the reverse. Authoring requires a branch.
+- **INV-10 Mirror-refresh safety:** a refresh never overwrites mirror content without **first
+  committing the prior review state (Docs JSON + suggestions + Drive comments) to git** (MR-1); it is
+  **idempotent** — re-running with no new canon and no new review state is a no-op, never a second wipe
+  (MR-3); and its **capture cannot trigger another refresh** (MR-2). See "Mirror refresh:
+  capture-before-overwrite".
 
 ### Security acceptance criteria (SEC) — "nothing malicious reaches the user's browser"
 - **SEC-1 Least privilege:** minimal MV3 `permissions`/`host_permissions` (only `docs.google.com`,
@@ -865,6 +914,23 @@ mocks so integration tests exercise real control flow without network.
 3. **Integration (with API fakes):**
    - Extension flows against `FakeGitHub` + `FakeDrive`: pull, push, branch create/delete, conflict
      refusal, tabbed-Doc read/write, Pull-safety — asserts INV-1..6 + INV-8 end to end without network.
+   - **Mirror-refresh** against `FakeGitHub` + `FakeDrive` (with comments + suggestions modelled),
+     asserting INV-10 / MR-1..MR-7:
+     - **T-MR-1 capture-before-overwrite:** comments+suggestions are committed and tagged
+       `crayon-review/<sha>` *before* the Doc content is overwritten; ordering asserted.
+     - **T-MR-2 recoverable:** the captured state is byte-recoverable from the `crayon-review/<sha>`
+       tag, keyed by `(sha, docId)`.
+     - **T-MR-3 idempotent:** a second refresh with no new canon / no new review state is a no-op —
+       no new capture tag, no content write.
+     - **T-MR-4 no loop:** the capture is a **tag** and the refresh Action's trigger **excludes tags**
+       (only default-branch pushes/merges); the projected-SHA marker is unchanged — a capture never
+       enqueues a refresh.
+     - **T-MR-5 serialized:** two concurrent triggers at the same canon SHA yield exactly one
+       capture+overwrite; the second is dropped (expected-SHA / timelock).
+     - **T-MR-6 owner-only:** a commenter-triggered refresh is refused; only the owning identity writes.
+     - **T-MR-7 timelock:** during the capture→overwrite window the Doc is view-only so a concurrent
+       comment is blocked (not lost-after-capture); and a refresh that dies leaves `refreshLockUntil`
+       to **auto-expire**, restoring commenter — the Doc is never left stuck.
    - CLI against an ephemeral repo / recorded fixtures: `init`; `check` (each starter rule kind pass +
      fail, plus a custom rule discovered from `.crayon/checks/`); `publish` (an example sink routes a
      file/section deterministically).
@@ -917,6 +983,11 @@ Acceptance criteria in Given/When/Then. These are the human-facing definition of
 - **B4 Mirror re-projection:** *Given* a merge to `main`, *then* the read-only `main` Drive mirror is
   overwritten with canon — **automatically** via the post-merge Action when a service identity is
   configured, **else** on the next triggered Pull of `main` — and never the reverse (INV-9).
+- **B5 Capture-before-overwrite:** *Given* comments/suggestions on the `main` mirror and a refresh,
+  *then* their full state is committed and **tagged `crayon-review/<sha>`** (discoverable in the tags
+  UI) **before** any Doc is overwritten and is recoverable by `(sha, docId)`; *and when* the refresh re-runs with no new
+  canon and no new review state, *then* it is a **no-op** (no second wipe, no capture churn) and the
+  capture never triggers another refresh (INV-10 / MR-1..MR-7).
 
 ### UAT-C — Local IDE (UI-3)
 - **C1 Author offline:** *Given* a clone, *when* a dev edits Markdown and runs `crayon check`, *then*
@@ -964,7 +1035,8 @@ files as Docs (untabbed = file, tabbed = directory, folder = directory, disambig
 `.crayon-tabs.json`); explicit Pull/Push as tree reconciliation; one atomic commit + optional PR;
 branch create/switch/delete with recursive folder mirroring; **a read-only `main` mirror** (commenter
 access; refreshed from canon by a post-merge Action when a service identity is configured, else by
-triggered Pull; Push refused — INV-9) with **"branch from recommended changes"** materializing
+triggered Pull; Push refused — INV-9; **capture-before-overwrite** so review state is archived to git
+first, idempotent and loop-free — INV-10) with **"branch from recommended changes"** materializing
 reviewers' suggestions onto a new branch; Markdown canonical + per-Doc per-commit
 JSON snapshot; conflict = refuse-and-pull; a thin Python CLI for scaffold + a rule engine (`check`) +
 a symmetric sink engine (`publish`) + doctor — with starter rules/sinks and copy-the-pattern custom

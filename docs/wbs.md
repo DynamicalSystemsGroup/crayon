@@ -8,7 +8,7 @@ acceptance boundary.
 
 > Read [`../SPEC.md`](../SPEC.md), [`repo-layout.md`](repo-layout.md), and
 > [`../schemas/`](../schemas/) first — this document references their contracts (S1–S8), invariants
-> (INV-1…INV-9), UAT suites (UAT-A…E), and security criteria (SEC-1…SEC-9) by id.
+> (INV-1…INV-10), UAT suites (UAT-A…E), and security criteria (SEC-1…SEC-9) by id.
 
 ## How to read a package
 
@@ -287,11 +287,18 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
 - **8 — Tabbed Docs (step 8):** opt-in `.crayon-tabs.json`; read/write existing tabs by `tabId` (no
   tab CRUD). Gate: `TAB_STRUCTURE_REQUIRED` path; tabbed round-trip. Depends on WBS 5.
 - **9 — PR + navigation glue (step 9):** Open-PR flow, github.com ⇄ Docs navigation links; finalize
-  CLI governance (2.5–2.8 land here if not earlier); plus the **auto mirror-refresh** — a post-merge
-  Action that re-projects the read-only `main` mirror from canon via a Google service identity (a Drive
-  sink / automated Pull, secret post-merge-scoped per SEC-8), with triggered Pull as the fallback when
-  no service identity is configured. Gate: **UAT-B1/B3**, **UAT-B4** (mirror re-projection on merge),
-  **UAT-D1** cross-UI converge. Depends on WBS 2, 4, 7.
+  CLI governance (2.5–2.8 land here if not earlier). Gate: **UAT-B1/B3**, **UAT-D1** cross-UI converge.
+  Depends on WBS 2, 4, 7.
+- **9m — Mirror refresh, capture-before-overwrite (with step 9):** re-project the read-only `main`
+  mirror from canon via the owner/service identity — a post-merge Action when configured (Drive sink /
+  automated Pull, secret post-merge-scoped per SEC-8), else triggered Pull. **Non-naive sequencing**
+  (MR-1..MR-7): capture each Doc's review state (Docs JSON + suggestions + Drive comments) to a
+  discoverable **git tag** `crayon-review/<sha>` (loop-free — the Action excludes tags) **before**
+  overwrite; projected-SHA idempotence guard; serialized triggers; owner-only; a **mandatory
+  time-bounded lock** (auto-expiring, length configurable with a small floor) closing the
+  capture→overwrite race. Gate: **INV-10**, **UAT-B4/B5**, integration tests **T-MR-1..T-MR-7**
+  (capture-before-overwrite, recoverable, idempotent/no-second-wipe, no-loop, serialized, owner-only,
+  timelock). Depends on WBS 4.9, 2.6/2.8.
 
 ---
 
@@ -378,10 +385,11 @@ gated by review** (dev-install now, Web Store later).
   converter (3.4) — they don't touch.
 - **Invariant ownership:** INV-1 → 3.5/4.4/4.5 · INV-2 → 2.2/3.4 · INV-3 → 4.4 · INV-4 → 4.6 · INV-5 →
   WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4 · **INV-8 (Pull safety) → 4.4** · **INV-9 (read-only
-  `main` mirror) → 4.1/4.9**.
+  `main` mirror) → 4.1/4.9** · **INV-10 (mirror-refresh capture-before-overwrite) → WBS 9m**.
 - **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · **A6 (read-only
   main + branch-from-suggestions) → 4.9/WBS 7** · UAT-B1 → 4.5 · UAT-B2 → 2.2/2.8 · **B4 (mirror
-  re-projection) → WBS 9** · **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
+  re-projection) → WBS 9m** · **B5 (capture-before-overwrite) → WBS 9m** · **C2 (author a rule) →
+  2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
   C4 (interop) → WBS 5/9 · UAT-D → 4.6/9 · **UAT-E1-3 → O.3/O.4** · **E4 (first-import/adopt) →
   4.4/O.3** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 → S.7**. Every invariant, UAT case, and security
   criterion has an owning package.

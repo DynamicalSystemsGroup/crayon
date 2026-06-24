@@ -48,6 +48,14 @@ the JSON Schemas above (YAML is parsed to JSON first). Custom rules/sinks live a
 under `.crayon/checks/` and `.crayon/sinks/`; the CLI imports them so each subclass auto-registers its
 `kind`. **Branch protection is not on disk** — it is configured by a human in GitHub's web UI.
 
+**Read-only `main` review-state archive (a tag, not in the working tree).** Before the `main` mirror is
+overwritten by a refresh, its review state (Docs JSON + suggestions + Drive comments) is committed and
+pointed to by a **git tag** — `crayon-review/<defaultBranchSha>` (capture commit parented at the canon
+SHA, so it is *not* on `main`'s history). A tag is **discoverable** (`git tag`, GitHub tags UI) yet not
+a branch, and the refresh Action triggers only on default-branch pushes/merges — **never on tags** — so
+the capture cannot fire a refresh (INV-10 / MR-1..MR-7). It is intentionally *not* part of any branch's
+checked-out tree.
+
 **Directory disambiguation rule (the one-bit test):**
 
 > A directory containing `.crayon-tabs.json` **is a tabbed Google Doc**; any other directory is a

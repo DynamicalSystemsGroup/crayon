@@ -43,6 +43,20 @@ The Google-side counterpart to branch protection, resolving what "protection" me
 Landed in: core model, "The read-only `main` mirror" §, S3 (per-branch-role perms), Pull/Push +
 Branch-lifecycle, constraint #8, INV-9, W8, UAT-A6/UAT-B4, scope; WBS 4.1/4.9, 7, 9, coverage.
 
+**Follow-on hazard — mirror refresh destroys review state (resolved, INV-10).** The refresh overwrites
+the mirror, wiping comments/suggestions that live only there, and `main` is never Pushed — so naive
+triggering both *loses* the review state and can *loop* (a capture that advances `main` re-fires the
+post-merge Action → another wipe). Resolved with an explicit **capture-before-overwrite protocol**
+(MR-1..MR-7) + **INV-10**: capture each Doc's review state (Docs JSON + suggestions + Drive comments)
+to a discoverable **git tag** `crayon-review/<sha>` **before** any overwrite; a projected-SHA
+idempotence guard (re-run = no-op, no second wipe); a tag is not a branch and the Action excludes tags,
+so the capture can't trigger a refresh; serialized triggers; owner-executed; and a **mandatory
+time-bounded lock** (auto-expiring, length configurable with a small floor) closing the
+capture→overwrite race. Distinct from the deferred *structured* comment→GitHub capture — MR guarantees
+nothing is silently lost, with explicit tests T-MR-1..T-MR-7.
+Landed in: "Mirror refresh: capture-before-overwrite" §, INV-10, UAT-B5, Test strategy (T-MR-*),
+scope; WBS 9m, coverage.
+
 ## Scope added during this review
 - **Citable public example (WBS O.8):** a public GitHub repo (`crayon-example`, lipsum content, full
   `.crayon/` layout, a sample custom rule) + a public view-only Drive folder mirroring it, linkable
@@ -50,6 +64,6 @@ Branch-lifecycle, constraint #8, INV-9, W8, UAT-A6/UAT-B4, scope; WBS 4.1/4.9, 7
 
 ## Process note
 This review followed the Intent-Based-Coding discipline: the spec/contracts were stress-tested and
-amended **before** implementation, so the invariants (now INV-1…INV-9), UAT cases (UAT-A…E), and
+amended **before** implementation, so the invariants (now INV-1…INV-10), UAT cases (UAT-A…E), and
 security criteria (SEC-1…SEC-9) remain the executable acceptance boundary. Commits: `9291518`
 (rules/sinks + onboarding/security), `9b55eed` (DR-1…DR-5), and the DR-6…DR-14 + consistency pass.

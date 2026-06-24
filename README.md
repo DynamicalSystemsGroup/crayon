@@ -51,7 +51,7 @@ diagrams, and the TDD/UAT plan.
 
 Per SPEC.md §"Suggested build sequence": (1) ✅ repo skeleton + spec, (2) `crayon init` CLI,
 (3) extension auth spike, (4) N=1 Pull/Push, … Each step is TDD — tests and the named invariants
-(INV-1…INV-9) come before code. See [`docs/wbs.md`](docs/wbs.md) for the full breakdown.
+(INV-1…INV-10) come before code. See [`docs/wbs.md`](docs/wbs.md) for the full breakdown.
 
 ## License
 
