@@ -12,7 +12,19 @@ Planned contents (added alongside the code that needs them, TDD-style):
 - `tier3-merged-drawing.*` — a Doc exercising Tier-3 (merged cells / Drawing): asserts the lint
   warning fires and the snapshot retains it.
 - `outline-wellformed.md` / `outline-skipped-level.md` / `outline-multi-top.md` — pass/fail cases for
-  `crayon check`.
+  the `outline_well_formed` rule.
+- `rules/` — pass/fail inputs for the other starter rule kinds (`word_count`, `section_drift`) plus a
+  sample custom `Rule` under `.crayon/checks/` (exercises auto-discovery + the pure/deterministic
+  contract).
+- `publish/` — a `publish.yaml` + an example `Sink` (e.g. `file`) routing a file/section, asserting a
+  deterministic, dependency-free write (`crayon publish`).
+- `settling/` — a Docs import whose first re-export differs from the source Markdown, asserting the
+  single **settling commit** and that the subsequent unedited cycle is a no-op (INV-1).
+- `mirror-refresh/` — a `main`-mirror Doc carrying **comments + suggestions** plus an advanced canon,
+  for the capture-before-overwrite tests (T-MR-1..T-MR-7 / INV-10): captured state, the
+  `crayon-review/<sha>` tag, idempotence, no-loop, and the timelock.
+- `template/` — a docId-less **template seed** (`.crayon/template.json` + lipsum `.md`), asserting
+  template-mode `crayon check` and that instantiation mints docIds to a valid live repo (UAT-E5).
 
 Each conversion fixture is a matched triple: `(docs-json input, expected canonical markdown, expected
 re-import Docs requests)`. If a rule in the profile changes, its fixtures change in the same commit.

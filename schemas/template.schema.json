@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/template.schema.json",
+  "title": "Crayon template marker (.crayon/template.json)",
+  "description": "Present ONLY in a pre-instantiation template seed (a GitHub template repo). It declares 'template mode': the seed is bound to no Drive folder, so each `.md` OMITS the `crayon` block (only title/subtitle) and `.crayon/manifest.json` nodes omit `docId`; in template mode the validator makes `crayon`/`docId` optional (does not apply the strict live schemas). Instantiating (extension 'New from template' → generate-from-template → first-import) mints fresh docIds for every file, drops this marker, and yields a schema-valid LIVE repo. frontmatter.schema.json and manifest.schema.json describe that live, instantiated shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "title": {
+      "type": "string",
+      "description": "Human-readable name shown in the extension's 'New from template' picker."
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of what this template seeds (shown in the picker)."
+    }
+  }
+}

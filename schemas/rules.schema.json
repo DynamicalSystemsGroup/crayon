@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://w3id.org/crayon/schemas/rules.schema.json",
+  "title": "Crayon rule set (.crayon/rules.yaml)",
+  "description": "Low-code materialization of `Rule` instances run by `crayon check`. Each entry selects a concrete rule `kind` (a built-in starter kind, or a custom subclass dropped in `.crayon/checks/`) and supplies its parameters. The CLI validates the parsed YAML against this schema; per-kind parameters beyond `kind`/`domain`/`severity` are validated by the rule class itself. Lives in the repo so rules are versioned and reviewable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "rules"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "rules": {
+      "type": "array",
+      "description": "Ordered list of executable rule instances.",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "description": "One executable rule: a concrete `kind` plus its parameters. Additional kind-specific keys are permitted and validated by the rule class.",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registry key of the concrete `Rule` subclass (e.g. `outline_well_formed`, `word_count`, `section_drift`, or a custom kind from `.crayon/checks/`)."
+        },
+        "domain": {
+          "type": "string",
+          "enum": ["repo", "file", "files", "section", "sections"],
+          "description": "Scope the rule acts on. Usually fixed by the kind; stated here only for clarity/override."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warn"],
+          "default": "error",
+          "description": "Whether a failure fails `crayon check` (non-zero exit) or only warns."
+        }
+      }
+    }
+  }
+}
