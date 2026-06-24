@@ -56,4 +56,4 @@ Per SPEC.md §"Suggested build sequence": (1) ✅ repo skeleton + spec, (2) `cra
 
 ## License
 
-TBD.
+[Apache License 2.0](LICENSE).
