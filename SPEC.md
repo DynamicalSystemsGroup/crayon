@@ -797,7 +797,7 @@ mocks so integration tests exercise real control flow without network.
    conformance** for Canonical Markdown shared by the JS and Python suites (INV-7).
 3. **Integration (with API fakes):**
    - Extension flows against `FakeGitHub` + `FakeDrive`: pull, push, branch create/delete, conflict
-     refusal, tabbed-Doc read/write — asserts INV-1..6 end to end without network.
+     refusal, tabbed-Doc read/write, Pull-safety — asserts INV-1..6 + INV-8 end to end without network.
    - CLI against an ephemeral repo / recorded fixtures: `init`; `check` (each starter rule kind pass +
      fail, plus a custom rule discovered from `.crayon/checks/`); `publish` (an example sink routes a
      file/section deterministically).
@@ -811,8 +811,12 @@ contract tests, (c) write the failing integration test against the fakes, (d) im
 
 ### Fixtures
 `tests/fixtures/` holds: golden Docs-JSON inputs, expected Canonical Markdown, a Tier-1 figure+table
-doc, a Tier-3 (merged cells / Drawing) doc, well-formed and malformed outlines. Shared across JS and
-Python via a committed, language-neutral folder.
+doc, a Tier-3 (merged cells / Drawing) doc, well-formed and malformed outlines; **rule fixtures**
+(pass/fail inputs for `word_count` and `section_drift`, plus a sample custom `Rule` in
+`.crayon/checks/`); a **sink fixture** (a `publish.yaml` + an example `Sink` routing a file/section
+deterministically); and a **settling fixture** (a Docs import whose first re-export differs, asserting
+the single settling commit then a no-op cycle — INV-1). Shared across JS and Python via a committed,
+language-neutral folder.
 
 ---
 

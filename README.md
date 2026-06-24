@@ -8,7 +8,8 @@ git's own local/remote mental model:
 - **GitHub = remote.** Canon is the remote `main` branch. Branches, history, PRs, and policy live here.
 - **Google Doc/Drive = shared local working copy.** Ergonomic, multiplayer, disposable.
 - **Crayon Chrome extension = the working-copy tooling** — pull, push, branch, open PR, navigate.
-- **`crayon` Python CLI = the governance layer** — scaffold a repo, author/enforce CI policy.
+- **`crayon` Python CLI = minimalist governance tooling** — scaffold a repo, author CI **rules**
+  (`check`) and content **routes** (`publish`); branch protection is configured in GitHub's web UI.
 
 Crayon is **opinionated and serverless**: it supports one blessed workflow well, and the extension
 talks directly to the GitHub + Google APIs from the browser (no backend to host).
@@ -21,7 +22,10 @@ This repository currently contains:
 | Path | What it is |
 |---|---|
 | [`SPEC.md`](SPEC.md) | The approved v1 specification (the source of truth for the design). |
+| [`docs/wbs.md`](docs/wbs.md) | The work breakdown structure — packages mapped to contracts + acceptance gates. |
 | [`docs/repo-layout.md`](docs/repo-layout.md) | The on-disk repo layout + the **Canonical Markdown** profile. |
+| [`docs/design-review.md`](docs/design-review.md) | The design-review decision log (DR-1…DR-14 + resolutions). |
+| [`docs/screening-guide.md`](docs/screening-guide.md) | Reviewer checklist for constitutive changes (rules/sinks/workflows). |
 | [`schemas/`](schemas/) | JSON Schemas for the on-disk data contracts (S5). |
 | [`tests/fixtures/`](tests/fixtures/) | Where shared golden fixtures will live (JS + Python consume them). |
 | [`extension/`](extension/) | Placeholder for the Chrome extension (not yet implemented). |
@@ -47,7 +51,7 @@ diagrams, and the TDD/UAT plan.
 
 Per SPEC.md §"Suggested build sequence": (1) ✅ repo skeleton + spec, (2) `crayon init` CLI,
 (3) extension auth spike, (4) N=1 Pull/Push, … Each step is TDD — tests and the named invariants
-(INV-1…INV-7) come before code.
+(INV-1…INV-8) come before code. See [`docs/wbs.md`](docs/wbs.md) for the full breakdown.
 
 ## License
 

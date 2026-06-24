@@ -8,7 +8,7 @@ acceptance boundary.
 
 > Read [`../SPEC.md`](../SPEC.md), [`repo-layout.md`](repo-layout.md), and
 > [`../schemas/`](../schemas/) first — this document references their contracts (S1–S8), invariants
-> (INV-1…INV-7), UAT suites (UAT-A…E), and security criteria (SEC-1…n) by id.
+> (INV-1…INV-8), UAT suites (UAT-A…E), and security criteria (SEC-1…SEC-9) by id.
 
 ## How to read a package
 
@@ -73,7 +73,7 @@ for review):
 - **New UAT-E — onboarding:** a first-time user, starting from nothing, reaches a working in-sync
   state by following only the doc site, with **no separate login or API key** (web) / a gitignored
   `.env` (IDE).
-- **New security acceptance criteria SEC-1…n** referenced by the spec's Test strategy: MV3
+- **New security acceptance criteria SEC-1…SEC-9** referenced by the spec's Test strategy: MV3
   least-privilege, no remote code, token-handling, supply-chain integrity, content-script injection
   safety — the executable boundary for "nothing malicious reaches the user's browser."
 
@@ -292,7 +292,7 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
 ## WBS S — Security & supply chain (continuous gate + external review)
 
 Cross-cutting. **Continuous release-gate sweep in CI, plus a third-party/store security review before
-any public listing.** Traces to SEC-1…n (WBS 0.1). "Nothing malicious reaches the user's browser" is
+any public listing.** Traces to SEC-1…SEC-9 (WBS 0.1). "Nothing malicious reaches the user's browser" is
 the headline guarantee.
 
 - **S.1 MV3 least-privilege + CSP audit** — minimal `permissions`/`host_permissions` (only
