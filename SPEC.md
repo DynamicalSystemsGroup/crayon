@@ -491,13 +491,14 @@ read-only receiver, not an authoring surface:**
   Editors elsewhere; here you can only observe and propose. **Push is refused from the `main` folder**
   (INV-9) — you cannot author canon in Docs.
 - **It is overwritten by canon, never the reverse — but capture-before-overwrite.** The mirror is
-  re-projected from the GitHub default branch — **automatically on merge** via a post-merge Action when
-  a service identity is configured (a Drive sink / automated Pull, post-merge-scoped per SEC-8),
-  **and/or** on any **triggered Pull** of `main`. The overwrite would wipe the review state
-  (comments/suggestions) that lives only on the mirror, and `main` is never Pushed, so git would
-  otherwise have no record of it. The refresh therefore **captures that state into git immediately
-  before overwriting** — and its triggering/sequencing is deliberately non-naive (it must not loop or
-  double-wipe). See "Mirror refresh: capture-before-overwrite" and **INV-10**.
+  re-projected from the default branch by the `main` folder's owner. **Default: an owner-triggered Pull
+  of `main`** (so a collaborator's mirror may be stale until the owner refreshes). **Opt-in: automatic
+  on merge** — a post-merge Action runs the same projection as an **automated Pull**, which needs a
+  configured **Google service identity** owning `main` (post-merge-scoped per SEC-8). The overwrite
+  would wipe the review state (comments/suggestions) that lives only on the mirror, and `main` is never
+  Pushed, so the refresh **captures that state into git immediately before overwriting** — sequencing
+  is deliberately non-naive (no loop, no double-wipe). See "Mirror refresh: capture-before-overwrite"
+  and **INV-10**.
 - **To change canon, branch.** Editing requires a **branch** — a programmatically generated copy
   (Drive folder copy + new docIds, per DR-9) that *is* editable. You edit there, Crayon-push to the
   branch, then open a PR on GitHub. Merge conflicts surface as **GitHub PR conflicts** resolved with
@@ -525,7 +526,8 @@ suggestions) **plus** its Drive comments via the Comments API — comments are *
   counter/timestamp suffix if a later refresh at the same SHA captures new review state). A tag is a
   `refs/tags/` ref: **discoverable** (`git tag`, GitHub's tags UI), yet **not a branch** — and the
   refresh Action triggers only on default-branch pushes/merges, **never on tags**, so pushing the
-  capture tag cannot fire a refresh. Never written to protected `main` content.
+  capture tag cannot fire a refresh. Authored under a Crayon **bot identity**; never written to
+  protected `main` content.
 - **MR-3 Idempotent / projected-SHA guard.** The refresh records the canon default-branch SHA it last
   projected (in the mirror Docs' `DeveloperMetadata` and as the capture tag). It is a **no-op** when
   canon has not advanced past that SHA *and* no new review state exists — **no capture, no content
@@ -555,9 +557,10 @@ The fast way to start a new doc/repo (the operative, 2–3-click path) is **cano
 template**, then project to Drive — not the IDE `crayon init` (that stays the constitutive path):
 - **Template seed.** A **GitHub template repo** (`crayon-template`) holds lipsum content + the
   `.crayon/` layout + a **`.crayon/template.json` marker** (`template.schema.json`). It is *docId-less*
-  — bound to no Drive folder — so `frontmatter.schema.json` / `manifest.schema.json` (which describe
-  the **live**, instantiated shape) do not apply to it; in **template mode** `crayon check`/doctor skip
-  the docId-binding rules. (The **citable example**, O.8, is this template **instantiated once
+  — bound to no Drive folder: each `.md` **omits the `crayon` block** (only `title`/`subtitle`) and
+  manifest nodes omit `docId`. So `frontmatter.schema.json` / `manifest.schema.json` describe the
+  **live** (instantiated) shape; in **template mode** (marker present) the validator makes
+  `crayon`/`docId` **optional**. (The **citable example**, O.8, is this template **instantiated once
   publicly** — template spawns, example cites.)
 - **Instantiate (W9).** `repo.createFromTemplate` (1) **generates** a new repo via
   `POST /repos/{owner}/{repo}/generate` — creating a repo needs the **GitHub App installed on the
@@ -566,7 +569,9 @@ template**, then project to Drive — not the IDE `crayon init` (that stays the 
   Drive folder and
   **mints Docs for every file (first-import, DR-8/UAT-E4)**, writes the real docIds back as one settling
   commit, **drops the template marker**, and sets the read-only `main` mirror permissions — all under
-  the user's own Google authority. Lipsum makes the result non-empty, so success is visually obvious.
+  the user's own Google authority. The marker is dropped **only on success**, so the step is
+  idempotent/resumable: a failed Drive provision leaves a re-runnable template, never a half-bound
+  repo. Lipsum makes the result non-empty, so success is visually obvious.
 - **Result:** a new GitHub repo ⇄ matched Drive folder, schema-valid and live, in ~2–3 clicks.
 
 ---
@@ -598,7 +603,9 @@ error}`):
   — the branch PR's GitHub CI state, rendered as the green/red indicator in the popup and chip.
 
 **Error taxonomy (stable, tested):** `AUTH_REQUIRED`, `NOT_BOUND`, `DIVERGED_CONFLICT`,
-`RATE_LIMITED`, `DRIVE_ERROR`, `GITHUB_ERROR`, `TAB_STRUCTURE_REQUIRED`, `TIER3_PRESENT` (warn).
+`RATE_LIMITED`, `DRIVE_ERROR`, `GITHUB_ERROR`, `TAB_STRUCTURE_REQUIRED`, `TIER3_PRESENT` (warn),
+`READ_ONLY_MAIN` (Push refused, INV-9), `MIRROR_LOCKED` (refresh timelock, MR-6), `TEMPLATE_FAILED`
+(generate/instantiate), `NO_SUGGESTIONS` (branch-from-recommended with none).
 **Invariant:** `sync.push` returns `DIVERGED_CONFLICT` and performs **zero branch/ref mutations** when
 both sides moved (never partially commits; any orphan Git objects from an aborted build are harmless
 and gc'd).
@@ -1170,7 +1177,9 @@ Sources: [Docs to Markdown + Git](https://medium.com/@vikramaruchamy/convert-goo
 
 ## Suggested build sequence (after this spec is approved — no code yet)
 
-This spec is the deliverable. When approved, a reasonable order is:
+This spec is the deliverable. The high-level order below is the original sketch; the **authoritative,
+detailed breakdown is [`docs/wbs.md`](docs/wbs.md)** (packages → contracts → acceptance gates). When
+approved, a reasonable order is:
 1. **Spec polish → repo skeleton:** README, this spec checked in, the `.crayon/` layout documented.
 2. **CLI `crayon init`** first (it defines the canonical repo shape the extension consumes).
 3. **Extension auth spike:** GitHub App device flow + Google PKCE, prove serverless dual-OAuth (and

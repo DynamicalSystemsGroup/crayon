@@ -31,7 +31,7 @@ The Google-side counterpart to branch protection, resolving what "protection" me
   (**INV-9**): shared **commenter** (read/comment/suggest, no edit); **Push from `main` is refused**;
   it is overwritten by canon, never the reverse.
 - **Refresh — both** (maintainer's choice): a **post-merge Action + Google service identity** when
-  configured (Drive sink / automated Pull, secret post-merge-scoped per SEC-8), **else triggered
+  configured (automated Pull, secret post-merge-scoped per SEC-8), **else triggered
   Pull** of `main`.
 - **Read-only enforcement — Drive permissions** (commenter), which also enables the review surface.
 - **Capturing review — "branch from recommended changes":** reviewers leave Google Docs *suggestions*

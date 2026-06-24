@@ -291,8 +291,8 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
   CLI governance (2.5–2.8 land here if not earlier). Gate: **UAT-B1/B3**, **UAT-D1** cross-UI converge.
   Depends on WBS 2, 4, 7.
 - **9m — Mirror refresh, capture-before-overwrite (with step 9):** re-project the read-only `main`
-  mirror from canon via the owner/service identity — a post-merge Action when configured (Drive sink /
-  automated Pull, secret post-merge-scoped per SEC-8), else triggered Pull. **Non-naive sequencing**
+  mirror from canon via the owner — **default** owner-triggered Pull; **opt-in** post-merge Action
+  (automated Pull, needs a Google service identity, secret post-merge-scoped per SEC-8). **Non-naive sequencing**
   (MR-1..MR-7): capture each Doc's review state (Docs JSON + suggestions + Drive comments) to a
   discoverable **git tag** `crayon-review/<sha>` (loop-free — the Action excludes tags) **before**
   overwrite; projected-SHA idempotence guard; serialized triggers; owner-only; a **mandatory
