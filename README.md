@@ -31,6 +31,7 @@ This repository currently contains:
 | [`tests/fixtures/`](tests/fixtures/) | Where shared golden fixtures will live (JS + Python consume them). |
 | [`extension/`](extension/) | Placeholder for the Chrome extension (not yet implemented). |
 | [`cli/`](cli/) | Placeholder for the `crayon` Python CLI (not yet implemented). |
+| [`LICENSE`](LICENSE) | Apache License 2.0. |
 
 ## The core model in one picture
 
@@ -56,4 +57,4 @@ Per SPEC.md §"Suggested build sequence": (1) ✅ repo skeleton + spec, (2) `cra
 
 ## License
 
-TBD.
+[Apache License 2.0](LICENSE).
