@@ -8,7 +8,7 @@ acceptance boundary.
 
 > Read [`../SPEC.md`](../SPEC.md), [`repo-layout.md`](repo-layout.md), and
 > [`../schemas/`](../schemas/) first — this document references their contracts (S1–S8), invariants
-> (INV-1…INV-8), UAT suites (UAT-A…E), and security criteria (SEC-1…SEC-9) by id.
+> (INV-1…INV-9), UAT suites (UAT-A…E), and security criteria (SEC-1…SEC-9) by id.
 
 ## How to read a package
 
@@ -255,7 +255,7 @@ with **no tree-walking** — the integration milestone where INV-1/3/4 first hol
 
 | WBS | Deliverable | Satisfies | Acceptance gate | Depends on |
 |-----|-------------|-----------|-----------------|------------|
-| 4.1 | Drive binding + branch-folder layout — **one canonical folder** under `Crayon/<owner>/<repo>/<branch>/` (account or Shared Drive), collaborators as editors; **one-time Picker "adopt" per Doc** for files another user created (`drive.file`) | S3 | integration vs FakeDrive; adopt path covered | 3.2, 1.3 |
+| 4.1 | Drive binding + branch-folder layout — **one canonical folder** under `Crayon/<owner>/<repo>/<branch>/` (service identity / repo owner); **per-branch-role permissions** (`main` = commenter, feature branches = editor); **one-time Picker "adopt" per Doc** for files another user created (`drive.file`) | S3 | integration vs FakeDrive; adopt path covered; `main` is commenter | 3.2, 1.3 |
 | 4.2 | Checkpoint read/write — `DeveloperMetadata` per `checkpoint.schema.json`; `lastSyncContentHash` taken over the Doc's **re-export** (settling), tabbed-Doc hash = ordered tab concat | S3, S5 | contract + integration | 4.1, 1.2 |
 | 4.3 | Divergence state machine — `status.get` → `in-sync\|local-ahead\|remote-ahead\|diverged` | S1 | unit over the truth table | 4.2 |
 | 4.4 | Pull (N=1) — **Pull-safety guard** (refuse/confirm if local-ahead/diverged), **first-import** (mint docIds, write back), convert via 3.5, write Doc, **settle** (re-export → hash → ≤1 settling commit), stamp checkpoint, write snapshot | S2 (read), S3 | **INV-8** (no clobber); **INV-1** settling fixed point; **INV-3**; **UAT-A1**/**UAT-E4**. integration vs fakes | 3.5, 4.2, 4.3 |
@@ -263,6 +263,7 @@ with **no tree-walking** — the integration milestone where INV-1/3/4 first hol
 | 4.6 | Conflict refusal — both sides moved → `DIVERGED_CONFLICT`, **zero branch/ref mutations** | S1, S2 | **INV-4**; **UAT-A3** / **UAT-D2**. integration vs fakes | 4.5 |
 | 4.7 | Minimal popup + status chip — Pull/Push buttons, branch/repo display, docs.google.com chip | S1, content script | E2E manual smoke (SPEC.md step-4 verification) | 4.4, 4.5, 4.6 |
 | 4.8 | CI status green/red — `checks.get` reads the GitHub Checks API; popup + chip render ✓ green / ✗ red / ◦ pending for the branch PR | S1 (`checks.get`), S2 (read) | **UAT-A5** (color matches GitHub Checks). integration vs FakeGitHub | 3.3, 4.7 |
+| 4.9 | Read-only `main` mirror — **refuse Push from `main`**; `main` Pull is a clean re-projection (triggered refresh); commenter perms from 4.1 | S1, S3 | **INV-9** (Push refused; overwrite-only); **UAT-A6** (no edit; comment/suggest). integration vs fakes | 4.5, 4.6 |
 
 ---
 
@@ -276,16 +277,21 @@ Each expands to full deliverable/acceptance packages when its predecessor is gre
 - **6 — Figures + tables Tier 1+2 (step 6):** images → content-hash `assets/` re-inserted via Drive
   staging; rectangular tables ⇄ canonical GFM with alignment; Tier-3 lint/warn chip. Gate: **INV-6**,
   **UAT-A4** (`TIER3_PRESENT` warn). Depends on WBS 3.4/3.5, 5.
-- **7 — Branch lifecycle (step 7):** create/switch/delete with recursive folder copy/trash mirroring.
+- **7 — Branch lifecycle (step 7):** create/switch/delete with recursive folder copy/trash mirroring,
+  plus **branch from recommended changes** (copy `main` with reviewers' suggestions materialized via
+  `documents.get?suggestionsViewMode=PREVIEW_SUGGESTIONS_ACCEPTED`, constraint #8 — accept-all in v1).
   **Risk (DR-9):** `files.copy` mints new docIds → an explicit transactional rewrite of every
   frontmatter `docId`, `.crayon-tabs.json`, the manifest, and checkpoints (one Drive call per Doc;
-  rate-limit-sensitive). Gate: **INV-5** (branch ⇄ exactly one folder; delete mirrors). Depends on
-  WBS 5.
+  rate-limit-sensitive). Gate: **INV-5** (branch ⇄ exactly one folder; delete mirrors); **UAT-A6**
+  (suggested diff materialized onto a new branch). Depends on WBS 5.
 - **8 — Tabbed Docs (step 8):** opt-in `.crayon-tabs.json`; read/write existing tabs by `tabId` (no
   tab CRUD). Gate: `TAB_STRUCTURE_REQUIRED` path; tabbed round-trip. Depends on WBS 5.
 - **9 — PR + navigation glue (step 9):** Open-PR flow, github.com ⇄ Docs navigation links; finalize
-  CLI governance (2.5–2.8 land here if not earlier). Gate: **UAT-B1/B3**, **UAT-D1** cross-UI
-  converge. Depends on WBS 2, 4, 7.
+  CLI governance (2.5–2.8 land here if not earlier); plus the **auto mirror-refresh** — a post-merge
+  Action that re-projects the read-only `main` mirror from canon via a Google service identity (a Drive
+  sink / automated Pull, secret post-merge-scoped per SEC-8), with triggered Pull as the fallback when
+  no service identity is configured. Gate: **UAT-B1/B3**, **UAT-B4** (mirror re-projection on merge),
+  **UAT-D1** cross-UI converge. Depends on WBS 2, 4, 7.
 
 ---
 
@@ -371,9 +377,11 @@ gated by review** (dev-install now, Web Store later).
   different surface, joined only at INV-7 via 1.4. The auth spike (3.2) runs concurrently with the
   converter (3.4) — they don't touch.
 - **Invariant ownership:** INV-1 → 3.5/4.4/4.5 · INV-2 → 2.2/3.4 · INV-3 → 4.4 · INV-4 → 4.6 · INV-5 →
-  WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4 · **INV-8 (Pull safety) → 4.4**.
-- **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · UAT-B1 → 4.5 ·
-  UAT-B2 → 2.2/2.8 · **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
+  WBS 7 · INV-6 → 3.4/WBS 6 · INV-7 → 1.4/2.4/3.4 · **INV-8 (Pull safety) → 4.4** · **INV-9 (read-only
+  `main` mirror) → 4.1/4.9**.
+- **UAT / SEC ownership:** UAT-A1/2/3 → 4.4/4.5/4.6 · **A5 (green/red CI) → 4.8** · **A6 (read-only
+  main + branch-from-suggestions) → 4.9/WBS 7** · UAT-B1 → 4.5 · UAT-B2 → 2.2/2.8 · **B4 (mirror
+  re-projection) → WBS 9** · **C2 (author a rule) → 2.2/O.6** · **C3 (route content out) → 2.6/O.7** ·
   C4 (interop) → WBS 5/9 · UAT-D → 4.6/9 · **UAT-E1-3 → O.3/O.4** · **E4 (first-import/adopt) →
   4.4/O.3** · **SEC-1…6 → WBS S.1–S.6** · **SEC-7/8/9 → S.7**. Every invariant, UAT case, and security
   criterion has an owning package.
